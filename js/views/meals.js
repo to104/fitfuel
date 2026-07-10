@@ -212,7 +212,9 @@ export async function openAddSheet(slot, date, onSaved) {
       <div class="quick-units">
         ${food.u ? `<button class="chip" data-g="${food.u[1]}">${esc(food.u[0])}（${food.u[1]}g）</button>` : ''}
         <button class="chip" data-g="100">100g</button>
-        ${food.u ? `<button class="chip" data-g="${food.u[1] * 2}">${esc(food.u[0])}×2</button>` : '<button class="chip" data-g="200">200g</button>'}
+        ${food.u2 ? `<button class="chip" data-g="${food.u2[1]}">${esc(food.u2[0])}（${food.u2[1]}g）</button>`
+          : food.u ? `<button class="chip" data-g="${food.u[1] * 2}">${esc(food.u[0])}×2</button>`
+          : '<button class="chip" data-g="200">200g</button>'}
       </div>
       <div class="preview card" id="pv"></div>
       <button class="btn btn-big" id="add-go">追加する</button>`;
