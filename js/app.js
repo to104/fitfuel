@@ -13,7 +13,7 @@ import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
 
-export const APP_VER = '1.2.7';
+export const APP_VER = '1.2.8';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -87,6 +87,15 @@ async function init() {
 
   // Service Worker（オフライン対応）
   if ('serviceWorker' in navigator) {
+    // 既にSWが動いている状態で新バージョンに切り替わったら、画面を自動で再読み込みする
+    // （従来の「2回リロード」を不要にする。初回インストール時は対象外）
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
     navigator.serviceWorker.register('./sw.js').catch(() => { /* http環境では失敗してよい */ });
   }
 }

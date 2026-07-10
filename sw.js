@@ -2,7 +2,7 @@
 // sw.js — Service Worker（オフライン対応）
 // ※アプリ更新時は下のCACHE名と js/app.js の APP_VER を両方上げること
 // ============================================================
-const CACHE = 'fitfuel-v1.2.7';
+const CACHE = 'fitfuel-v1.2.8';
 
 const ASSETS = [
   './',
@@ -27,9 +27,15 @@ const ASSETS = [
   './apple-touch-icon.png',
 ];
 
-// インストール時に全ファイルをキャッシュ（一時保存）する
+// インストール時に全ファイルをキャッシュ（一時保存）する。
+// {cache:'reload'}でブラウザのHTTPキャッシュを迂回して必ずサーバーから取り直す
+// （GitHub Pagesのmax-age=600により、更新直後だと古いファイルを掴む事故を防ぐ）
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 // 古いバージョンのキャッシュを削除する
