@@ -11,10 +11,11 @@ import { state, refresh } from '../app.js';
 
 export async function render(root) {
   const date = state.date;
-  const [rows, profile, loggedWeight] = await Promise.all([
+  const [rows, profile, loggedWeight, bright] = await Promise.all([
     db.byDate('workouts', date),
     db.getSetting('profile', {}),
     db.latestWeightUpTo(date),
+    db.getSetting('accentBright', 100),   // オレンジの明るさ（%）
   ]);
   rows.sort((a, b) => (a.ts || 0) - (b.ts || 0));
   // 消費カロリー推定に使う体重（その日以前の記録→なければプロフィール値）
@@ -50,7 +51,16 @@ export async function render(root) {
         ${w.memo ? `<div class="wo-memo">${esc(w.memo)}</div>` : ''}
       </button>`).join('') || '<div class="card empty-card">今日のトレーニングはまだ記録がありません</div>'}
 
-    <button class="btn btn-big" id="wo-add">＋ 種目を記録する</button>`;
+    <button class="btn btn-big" id="wo-add">＋ 種目を記録する</button>
+
+    <div class="sec-title">画面の色</div>
+    <div class="card bright-card">
+      <span class="bright-ico" aria-hidden="true">🔅</span>
+      <input type="range" id="accent-bright" min="50" max="150" step="5" value="${bright}" aria-label="オレンジの明るさ">
+      <span class="bright-ico" aria-hidden="true">🔆</span>
+      <button class="bright-val" id="bright-reset" aria-label="標準の明るさに戻す">${bright}%</button>
+    </div>
+    <div class="hint">この画面のオレンジ色の明るさを調整できます（%をタップで標準に戻す）</div>`;
 
   const tm = root.querySelector('#timer-mount');
   if (tm) timer.mountCard(tm);
@@ -64,6 +74,47 @@ export async function render(root) {
     const w = await db.get('workouts', +b.dataset.wo);
     if (w) openSetSheet(date, { id: w.exerciseId, name: w.name }, w);
   });
+
+  // オレンジ明るさスライダー: 動かすと即時反映、指を離したら保存
+  const slider = root.querySelector('#accent-bright');
+  const valBtn = root.querySelector('#bright-reset');
+  slider.oninput = () => {
+    setAccentVar(+slider.value);
+    valBtn.textContent = `${slider.value}%`;
+  };
+  slider.onchange = () => db.setSetting('accentBright', +slider.value);
+  valBtn.onclick = () => {
+    slider.value = 100;
+    setAccentVar(100);
+    valBtn.textContent = '100%';
+    db.setSetting('accentBright', 100);
+  };
+}
+
+// ============================================================
+// オレンジ明るさ調整（トレ画面の表示中だけ有効）
+// CSS変数 --accent（アプリ全体のオレンジ色の定義元）をbodyに上書きする。
+// タブを離れると app.js の refresh が applyAccent(false) で標準色に戻す。
+// ============================================================
+
+// 基準色: ダーク #FF9F0A = hsl(36,100%,52%)／ライト #E07800 = hsl(32,100%,44%)
+// 明るさ%はHSLのL（明度）に掛けて反映する（極端に潰れないよう22〜82%に制限）
+function accentColor(pct) {
+  const light = matchMedia('(prefers-color-scheme: light)').matches;
+  const [h, l] = light ? [32, 44] : [36, 52];
+  const nl = Math.max(22, Math.min(82, Math.round(l * pct / 100)));
+  return `hsl(${h} 100% ${nl}%)`;
+}
+
+function setAccentVar(pct) {
+  if (pct === 100) document.body.style.removeProperty('--accent');   // 標準は上書きなし
+  else document.body.style.setProperty('--accent', accentColor(pct));
+}
+
+// トレ画面の表示中だけ明るさ設定を反映する（app.jsのrefreshから毎回呼ばれる）
+export async function applyAccent(on) {
+  if (!on) { document.body.style.removeProperty('--accent'); return; }
+  setAccentVar(await db.getSetting('accentBright', 100));
 }
 
 // 総挙上量（重量×回数の合計＝ボリューム）

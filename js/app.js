@@ -13,7 +13,7 @@ import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
 
-export const APP_VER = '1.2.1';
+export const APP_VER = '1.2.2';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -34,6 +34,8 @@ export function setTab(tab) {
 export async function refresh() {
   document.querySelectorAll('.tabbar button').forEach(b =>
     b.classList.toggle('on', b.dataset.tab === state.tab));
+  // トレ画面だけオレンジの明るさ設定を反映し、他の画面では標準色に戻す
+  await train.applyAccent(state.tab === 'train');
   try {
     await VIEWS[state.tab].render(document.getElementById('view'));
   } catch (err) {
