@@ -143,6 +143,7 @@ input, select {
   font-variant-numeric: tabular-nums;
 }
 input:focus, select:focus { outline: none; border-color: var(--accent); }
+input[type="range"] { padding: 0; background: none; border: none; height: 30px; accent-color: var(--accent); }
 input[type="search"] { margin-bottom: 10px; }
 .form-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
@@ -461,6 +462,65 @@ input[type="search"] { margin-bottom: 10px; }
   max-width: 86vw; text-align: center;
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- 休憩タイマー ---------- */
+.timer-card { display: flex; flex-direction: column; align-items: center; }
+.t-ring { position: relative; }
+.t-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.t-time { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .01em; line-height: 1.1; }
+.t-sub { font-size: 11px; color: var(--sub); margin-top: 2px; }
+.t-presets { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 12px 0 4px; }
+.t-presets .chip { padding: 7px 11px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.chip.t-on { background: rgba(255,159,10,.15); border-color: var(--accent); color: var(--accent); }
+.t-adjust { width: 100%; margin-top: 8px; }
+.t-adjust .chip { text-align: center; padding: 10px; border-radius: 12px; }
+.t-main { width: 100%; margin-top: 10px; align-items: center; }
+.t-main .btn-ghost { padding: 11px; }
+
+/* シート内の休憩ストリップ */
+.rest-strip {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 8px 12px; margin-bottom: 12px;
+}
+.rest-strip .rs-label { font-size: 13px; color: var(--sub); font-weight: 600; }
+.rest-strip b { font-size: 20px; font-variant-numeric: tabular-nums; flex: 1; }
+.rest-strip .chip { padding: 7px 12px; font-size: 13px; }
+
+/* 全画面共通のミニバー（カウント中のみ表示） */
+#rest-bar {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  background: var(--accent); color: #14100A;
+  font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums;
+  padding: 9px 18px; border-radius: 100px;
+  box-shadow: var(--shadow-2); z-index: 60;
+}
+#rest-bar:active { transform: translateX(-50%) scale(.96); }
+
+/* タイマー終了時のフラッシュ */
+#timer-flash {
+  position: fixed; inset: 0; background: var(--accent);
+  opacity: 0; pointer-events: none; z-index: 300; transition: opacity .15s;
+}
+#timer-flash.on { opacity: .55; }
+
+/* バイブ発生用の隠しスイッチ（画面には見せない） */
+.haptic-hidden { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+
+/* 未確定のセット行（✓セット完了で自動追加された次セットの候補） */
+.set-row.pending input { opacity: .45; border-style: dashed; }
+
+/* 記録→トレ: 最近の記録リスト */
+.tr-day-head { font-size: 12px; font-weight: 700; color: var(--sub); margin: 10px 0 2px; font-variant-numeric: tabular-nums; }
+.tr-day-head:first-of-type { margin-top: 0; }
+.tr-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.tr-row:last-child { border-bottom: none; }
+.tr-name { font-weight: 600; flex: none; }
+.tr-sets { color: var(--sub); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* 動きを抑えたい設定の端末ではアニメーションを止める */
 @media (prefers-reduced-motion: reduce) {

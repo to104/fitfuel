@@ -4,8 +4,9 @@
 // 自己ベスト＝推定1RM（1回だけ挙げられる最大重量の推定値）の過去最高更新。
 // ============================================================
 import * as db from '../db.js';
+import * as timer from '../timer.js';
 import { e1rm, workoutKcal, workoutsKcal } from '../calc.js';
-import { esc, fmt, openSheet, closeSheet, toast, addDays, dateLabel } from '../ui.js';
+import { esc, fmt, openSheet, closeSheet, toast, addDays, dateLabel, todayStr } from '../ui.js';
 import { state, refresh } from '../app.js';
 
 export async function render(root) {
@@ -29,6 +30,8 @@ export async function render(root) {
       </div>
     </header>
 
+    ${date === todayStr() ? '<div id="timer-mount"></div>' : ''}
+
     ${burn ? `
     <div class="card burn-card">
       <div class="card-head"><span>🔥 推定消費カロリー</span><b>約 ${fmt(burn)} kcal</b></div>
@@ -42,12 +45,15 @@ export async function render(root) {
           <span class="wo-vol">${fmt(vol(w))} kg${bw ? `・約${fmt(Math.round(workoutKcal(w, bw)))}kcal` : ''}</span>
         </div>
         <div class="wo-sets">
-          ${w.sets.map((s, i) => `<span class="wo-set">${i + 1}. ${fmt(s.weight, 1)}kg × ${s.reps}${s.rpe ? ` @${s.rpe}` : ''}</span>`).join('')}
+          ${w.sets.map((s, i) => `<span class="wo-set">${i + 1}. ${s.weight > 0 ? `${fmt(s.weight, 1)}kg` : '自重'} × ${s.reps}${s.rpe ? ` @${s.rpe}` : ''}</span>`).join('')}
         </div>
         ${w.memo ? `<div class="wo-memo">${esc(w.memo)}</div>` : ''}
       </button>`).join('') || '<div class="card empty-card">今日のトレーニングはまだ記録がありません</div>'}
 
     <button class="btn btn-big" id="wo-add">＋ 種目を記録する</button>`;
+
+  const tm = root.querySelector('#timer-mount');
+  if (tm) timer.mountCard(tm);
 
   root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
     state.date = addDays(state.date, +b.dataset.day);
@@ -93,6 +99,8 @@ async function openExercisePicker(date) {
 }
 
 // ---- セット入力シート ----
+// 今日の記録では「✓ セット完了」で1セットずつ途中保存でき、
+// 休憩タイマーが自動で始まる（ジムでの1タップ運用。設定でOFFにできる）。
 async function openSetSheet(date, ex, existing) {
   // 前回記録（この記録より前で同じ種目の最新）を探す
   const history = await db.byIndex('workouts', 'exerciseId', ex.id);
@@ -104,20 +112,35 @@ async function openSetSheet(date, ex, existing) {
   const initSets = existing?.sets
     || (prev ? prev.sets.map(s => ({ ...s })) : [{ weight: '', reps: '', rpe: '' }]);
 
+  const isToday = date === todayStr();
+
   const body = openSheet(ex.name, `
-    ${prev ? `<div class="prev-box">前回（${prev.date.slice(5).replace('-', '/')}） ${prev.sets.map(s => `${fmt(s.weight, 1)}×${s.reps}`).join(' / ')}</div>`
+    <div id="sheet-rest"></div>
+    ${prev ? `<div class="prev-box">前回（${prev.date.slice(5).replace('-', '/')}） ${prev.sets.map(s => `${s.weight > 0 ? fmt(s.weight, 1) : '自重'}×${s.reps}`).join(' / ')}</div>`
            : '<div class="prev-box">前回記録なし — 初挑戦です</div>'}
     <div class="set-head"><span></span><span>重量 kg</span><span>回数</span><span>RPE</span><span></span></div>
     <div id="sets"></div>
     <button class="btn-ghost" id="set-add">＋ セットを追加</button>
+    ${isToday ? '<button class="btn btn-big" id="wo-done">✓ セット完了（記録して休憩へ）</button>' : ''}
     <label>メモ<input id="wo-memo" type="text" value="${esc(existing?.memo || '')}" placeholder="フォームの気づきなど"></label>
-    <button class="btn btn-big" id="wo-save">保存する</button>
-    ${existing ? '<button class="btn-danger" id="wo-del">この記録を削除</button>' : ''}`);
+    <button class="${isToday ? 'btn' : 'btn btn-big'}" id="wo-save">保存して閉じる</button>
+    ${existing ? '<button class="btn-danger" id="wo-del">この記録を削除</button>' : ''}`,
+    { onClose: refresh });   // ✓で途中保存した後に✕で閉じても一覧に反映されるように
+
+  // 休憩タイマーの残り時間・操作をシート内に表示（カウント中のみ見える）
+  timer.mountStrip(body.querySelector('#sheet-rest'));
+
+  // ✓で途中保存した後は同じ記録を上書きし続けるためIDを覚えておく
+  let recId = existing?.id ?? null;
+  let recTs = existing?.ts ?? null;
+  let hadPr = existing?.pr || false;
 
   const setsEl = body.querySelector('#sets');
-  const addRow = (s = { weight: '', reps: '', rpe: '' }) => {
+  // pending=true は「✓セット完了」で自動追加された次セットの候補行。
+  // 入力するか次の✓で確定し、そのまま閉じた場合は保存対象にならない。
+  const addRow = (s = { weight: '', reps: '', rpe: '' }, pending = false) => {
     const row = document.createElement('div');
-    row.className = 'set-row';
+    row.className = 'set-row' + (pending ? ' pending' : '');
     row.innerHTML = `
       <span class="set-no">${setsEl.children.length + 1}</span>
       <input type="number" inputmode="decimal" class="s-w" value="${s.weight ?? ''}">
@@ -128,9 +151,11 @@ async function openSetSheet(date, ex, existing) {
       row.remove();
       [...setsEl.children].forEach((r, i) => r.querySelector('.set-no').textContent = i + 1);
     };
+    row.querySelectorAll('input').forEach(i =>
+      i.addEventListener('input', () => row.classList.remove('pending')));
     setsEl.appendChild(row);
   };
-  initSets.forEach(addRow);
+  initSets.forEach(s => addRow(s));
   // セット追加時は直前のセットの入力値をコピーする（連続セットの入力を楽にする）
   body.querySelector('#set-add').onclick = () => {
     const last = setsEl.lastElementChild;
@@ -141,32 +166,67 @@ async function openSetSheet(date, ex, existing) {
     } : undefined);
   };
 
-  body.querySelector('#wo-save').onclick = async () => {
-    const sets = [...setsEl.children].map(r => ({
-      weight: +r.querySelector('.s-w').value || 0,
+  // 入力行からセット配列を作る（未確定行は除外。重量欄が空でなければ0kg=自重として扱う）
+  const collectSets = () => [...setsEl.children]
+    .filter(r => !r.classList.contains('pending'))
+    .map(r => ({
+      weight: parseFloat(r.querySelector('.s-w').value) || 0,
+      weightGiven: r.querySelector('.s-w').value.trim() !== '',
       reps: +r.querySelector('.s-r').value || 0,
       rpe: +r.querySelector('.s-e').value || null,
-    })).filter(s => s.weight > 0 && s.reps > 0);
-    if (!sets.length) { toast('重量と回数を入力してください'); return; }
+    }))
+    .filter(s => s.reps > 0 && (s.weight > 0 || s.weightGiven))
+    .map(({ weight, reps, rpe }) => ({ weight, reps, rpe }));
 
-    // 自己ベスト判定: 過去全記録の推定1RM最大値と比較
+  // 保存本体（自己ベスト判定つき）。✓と「保存して閉じる」で共用する
+  const saveRec = async (sets) => {
     const sessionBest = Math.max(...sets.map(s => e1rm(s.weight, s.reps)));
     const histBest = Math.max(0, ...history
-      .filter(w => !existing || w.id !== existing.id)
+      .filter(w => recId == null || w.id !== recId)
       .flatMap(w => w.sets.map(s => e1rm(s.weight, s.reps))));
     const pr = sessionBest > histBest && histBest > 0;
-
-    await db.put('workouts', {
-      ...(existing || {}),
+    recTs = recTs || Date.now();
+    const saved = pr || (hadPr && sessionBest >= histBest) || false;
+    recId = await db.put('workouts', {
+      ...(recId != null ? { id: recId } : {}),
       date, exerciseId: ex.id, name: ex.name, sets,
       memo: body.querySelector('#wo-memo').value.trim(),
-      pr: pr || (existing?.pr && sessionBest >= histBest) || false,
-      ts: existing?.ts || Date.now(),
+      pr: saved,
+      ts: recTs,
     });
+    const newPr = pr && !hadPr;
+    hadPr = saved;
+    return { newPr, sessionBest };
+  };
+
+  // ✓ セット完了: 途中保存＋休憩タイマー自動開始＋次セット候補行を追加
+  if (isToday) body.querySelector('#wo-done').onclick = async () => {
+    // いま完了した扱いなので、未確定行も確定する
+    [...setsEl.children].forEach(r => r.classList.remove('pending'));
+    const sets = collectSets();
+    if (!sets.length) { toast('重量と回数を入力してください'); return; }
+    const { newPr, sessionBest } = await saveRec(sets);
+    timer.haptic();
+    const auto = timer.getPrefs().autoTimer;
+    if (auto) timer.startRest();
+    if (newPr) toast(`🏆 自己ベスト更新！ 推定1RM ${fmt(sessionBest, 1)}kg`, 3500);
+    else toast(`✓ ${sets.length}セット目を記録${auto ? '・休憩スタート' : ''}`);
+    // 次のセット用の候補行（前セットと同じ値・未確定）を用意する
+    const last = setsEl.lastElementChild;
+    addRow({
+      weight: last.querySelector('.s-w').value,
+      reps: last.querySelector('.s-r').value,
+      rpe: last.querySelector('.s-e').value,
+    }, true);
+  };
+
+  body.querySelector('#wo-save').onclick = async () => {
+    const sets = collectSets();
+    if (!sets.length) { toast('重量と回数を入力してください'); return; }
+    const { newPr, sessionBest } = await saveRec(sets);
     closeSheet();
-    if (pr) toast(`🏆 自己ベスト更新！ 推定1RM ${fmt(sessionBest, 1)}kg`, 3500);
+    if (newPr) toast(`🏆 自己ベスト更新！ 推定1RM ${fmt(sessionBest, 1)}kg`, 3500);
     else toast('トレーニングを記録しました');
-    refresh();
   };
 
   if (existing) body.querySelector('#wo-del').onclick = async () => {
@@ -174,6 +234,5 @@ async function openSetSheet(date, ex, existing) {
     await db.del('workouts', existing.id);
     closeSheet();
     toast('削除しました');
-    refresh();
   };
 }

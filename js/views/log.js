@@ -2,7 +2,7 @@
 // log.js — 記録画面（体重グラフ／カレンダー／レポート）
 // ============================================================
 import * as db from '../db.js';
-import { weeklyAverages } from '../calc.js';
+import { weeklyAverages, e1rm } from '../calc.js';
 import { lineChart, barChart } from '../charts.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays } from '../ui.js';
 import { state, refresh, setTab } from '../app.js';
@@ -13,7 +13,7 @@ export async function render(root) {
   root.innerHTML = `
     <header class="page-head"><h1 class="home-title">記録</h1></header>
     <div class="tabs page-tabs">
-      ${[['weight', '体重'], ['cal', 'カレンダー'], ['report', 'レポート']].map(([k, l]) =>
+      ${[['weight', '体重'], ['train', 'トレ'], ['cal', 'カレンダー'], ['report', 'レポート']].map(([k, l]) =>
         `<button class="tab${sub === k ? ' on' : ''}" data-sub="${k}">${l}</button>`).join('')}
     </div>
     <div id="log-pane"></div>`;
@@ -25,8 +25,84 @@ export async function render(root) {
 
   const pane = root.querySelector('#log-pane');
   if (sub === 'weight') await renderWeight(pane);
+  else if (sub === 'train') await renderTrain(pane);
   else if (sub === 'cal') await renderCalendar(pane);
   else await renderReport(pane);
+}
+
+// ============ トレ（種目別の推移・集計） ============
+async function renderTrain(pane) {
+  const workouts = (await db.all('workouts'))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
+  if (!workouts.length) {
+    pane.innerHTML = '<div class="card empty-card">トレーニング記録がまだありません。<br>トレ画面から記録するか、設定→データで筋トレ記録アプリから移行できます。</div>';
+    return;
+  }
+
+  // 種目リスト（最後にやった日が新しい順）
+  const lastDate = new Map();
+  workouts.forEach(w => lastDate.set(w.name, w.date));
+  const names = [...lastDate.keys()].sort((a, b) => lastDate.get(b).localeCompare(lastDate.get(a)));
+  const sel = names.includes(state.trainEx) ? state.trainEx : '';
+
+  const list = sel ? workouts.filter(w => w.name === sel) : workouts;
+  const allSets = list.flatMap(w => w.sets);
+  const maxW = Math.max(0, ...allSets.map(s => s.weight || 0));
+  const best = Math.max(0, ...allSets.map(s => e1rm(s.weight, s.reps)));
+  const month = todayStr().slice(0, 7);
+  const volMonth = list.filter(w => w.date.startsWith(month))
+    .reduce((a, w) => a + w.sets.reduce((x, s) => x + (s.weight || 0) * (s.reps || 0), 0), 0);
+
+  // 直近の記録（日ごとにまとめて新しい順に10日分）
+  const byDate = {};
+  list.forEach(w => (byDate[w.date] ??= []).push(w));
+  const recent = Object.keys(byDate).sort().reverse().slice(0, 10);
+
+  pane.innerHTML = `
+    <div class="card">
+      <label>種目<select id="tr-ex">
+        <option value="">すべての種目</option>
+        ${names.map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+      </select></label>
+    </div>
+    <div class="stat-grid">
+      <div class="card stat"><div class="stat-label">トレ日数</div><div class="stat-val">${new Set(list.map(w => w.date)).size}<span> 日</span></div></div>
+      <div class="card stat"><div class="stat-label">最大重量</div><div class="stat-val">${fmt(maxW, 1)}<span> kg</span></div></div>
+      <div class="card stat"><div class="stat-label">今月の総挙上量</div><div class="stat-val">${fmt(Math.round(volMonth))}<span> kg</span></div></div>
+      <div class="card stat"><div class="stat-label">推定1RMベスト</div><div class="stat-val">${fmt(best, 1)}<span> kg</span></div></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span>${sel ? `${esc(sel)}：日別の最大重量` : '重量の推移'}</span></div>
+      <div id="tr-chart">${sel ? '' : '<div class="chart-empty">種目を選ぶと推移グラフを表示します</div>'}</div>
+    </div>
+    <div class="card">
+      <div class="card-head"><span>最近の記録</span></div>
+      ${recent.map(d => `
+        <div class="tr-day-head">${+d.slice(5, 7)}/${+d.slice(8)}</div>
+        ${byDate[d].map(w => `
+          <div class="tr-row">
+            <span class="tr-name">${esc(w.name)}${w.pr ? ' 🏆' : ''}</span>
+            <span class="tr-sets">${w.sets.map(s => `${s.weight > 0 ? fmt(s.weight, 1) + 'kg' : '自重'}×${s.reps}`).join('　')}</span>
+          </div>`).join('')}`).join('')}
+    </div>`;
+
+  // グラフ: 日別の最大重量（直近20回分）
+  if (sel) {
+    const byDay = {};
+    list.forEach(w => w.sets.forEach(s => { byDay[w.date] = Math.max(byDay[w.date] || 0, s.weight || 0); }));
+    const pts = Object.entries(byDay).sort().slice(-20).map(([d, v]) => ({ d, v }));
+    if (pts.length >= 2) {
+      lineChart(pane.querySelector('#tr-chart'), pts,
+        { color: 'var(--p)', unit: 'kg', dates: [pts[0].d, pts[pts.length - 1].d] });
+    } else {
+      pane.querySelector('#tr-chart').innerHTML = '<div class="chart-empty">グラフは2日分以上の記録で表示されます</div>';
+    }
+  }
+
+  pane.querySelector('#tr-ex').onchange = (e) => {
+    state.trainEx = e.target.value;
+    refresh();
+  };
 }
 
 // ============ 体重 ============

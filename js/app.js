@@ -5,6 +5,7 @@
 // ============================================================
 import * as db from './db.js';
 import { todayStr } from './ui.js';
+import { initTimer } from './timer.js';
 import * as home from './views/home.js';
 import * as meals from './views/meals.js';
 import * as train from './views/train.js';
@@ -12,7 +13,7 @@ import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
 
-export const APP_VER = '1.1.0';
+export const APP_VER = '1.2.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -59,6 +60,8 @@ async function seed() {
 async function init() {
   await db.openDB();
   await seed();
+  // 休憩タイマー（前回カウント中に閉じた場合はここで自動再開する）
+  await initTimer({ onOpenTrain: () => { state.date = todayStr(); setTab('train'); } });
 
   // 下部タブのイベント
   document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {

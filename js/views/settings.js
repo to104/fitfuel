@@ -3,6 +3,7 @@
 // プロフィール・目標の編集 / サプリ・種目・Myフード管理 / バックアップ
 // ============================================================
 import * as db from '../db.js';
+import * as timer from '../timer.js';
 import { ACTIVITY, GOALS, recommend } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, segmented, segValue, todayStr } from '../ui.js';
 import { refresh, APP_VER } from '../app.js';
@@ -15,6 +16,7 @@ export async function render(root) {
     db.all('exercises'),
     db.all('customFoods'),
   ]);
+  const tp = timer.getPrefs();
 
   root.innerHTML = `
     <header class="page-head"><h1 class="home-title">設定</h1></header>
@@ -56,6 +58,22 @@ export async function render(root) {
       <p class="hint">種目の追加はトレ画面の「＋種目を記録する」からもできます。</p>
     </div>
 
+    <div class="sec-title">休憩タイマー</div>
+    <div class="card">
+      <label>完了音<select id="t-sound">${Object.entries(timer.SOUNDS).map(([k, s]) =>
+        `<option value="${k}"${k === tp.sound ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>
+      <button class="btn-ghost" id="t-test">▶ 試聴する</button>
+      <label>音量<input type="range" id="t-vol" min="0" max="1" step="0.05" value="${tp.vol}"></label>
+      <label class="check-line"><input type="checkbox" id="t-auto"${tp.autoTimer ? ' checked' : ''}>「✓ セット完了」で自動的に休憩タイマーを開始</label>
+      <label style="margin-top:12px">休憩時間（デフォルト）
+        <div class="amount-row">
+          <button class="step-btn" data-rest="-30">−30</button>
+          <input id="t-rest" readonly value="${timer.fmtSec(tp.rest)}">
+          <button class="step-btn" data-rest="30">＋30</button>
+        </div>
+      </label>
+    </div>
+
     <div class="sec-title">Myフード（自作食品・100gあたり）</div>
     <div class="card">
       ${myFoods.map(x => `<div class="manage-row"><span>${esc(x.name)}<i class="mut"> ${fmt(x.kcal)}kcal/P${fmt(x.p, 1)}</i></span><button class="icon-btn" data-del-food="${x.id}">✕</button></div>`).join('') || '<div class="empty-line">未登録（食事の手入力タブから登録できます）</div>'}
@@ -67,6 +85,11 @@ export async function render(root) {
       <button class="btn" id="bk-export">バックアップをエクスポート（JSON）</button>
       <label class="btn-ghost file-btn">バックアップをインポート<input id="bk-import" type="file" accept=".json,application/json" hidden></label>
       <p class="hint">エクスポートしたファイルはiCloudやGoogleドライブ等に保管してください。インポートすると現在のデータは置き換えられます。</p>
+      <hr class="sep">
+      <button class="btn-ghost" id="wo-csv">トレ記録をCSVで書き出し</button>
+      <label class="btn-ghost file-btn">筋トレ記録アプリから移行（JSON）<input id="kt-import" type="file" accept=".json,application/json" hidden></label>
+      <p class="hint">「筋トレ記録」アプリの 設定 →「保存（JSON）」で作ったバックアップファイルを選ぶと、トレ記録と種目・タイマー設定をこのアプリへ取り込みます。既存のデータはそのまま残り、同じ日の同じ種目がすでにある場合はスキップされます。</p>
+      <hr class="sep">
       <button class="btn-danger" id="bk-wipe">全データを削除</button>
     </div>
 
@@ -157,6 +180,108 @@ export async function render(root) {
       toast('登録しました');
       refresh();
     };
+  };
+
+  // ---- 休憩タイマー設定（変更したら即保存） ----
+  root.querySelector('#t-sound').onchange = async (e) => {
+    await timer.setPrefs({ sound: e.target.value });
+    timer.playSound(e.target.value);
+  };
+  root.querySelector('#t-test').onclick = () => timer.playSound(timer.getPrefs().sound);
+  root.querySelector('#t-vol').onchange = async (e) => {
+    await timer.setPrefs({ vol: parseFloat(e.target.value) });
+    timer.playSound(timer.getPrefs().sound);
+  };
+  root.querySelector('#t-auto').onchange = async (e) => {
+    await timer.setPrefs({ autoTimer: e.target.checked });
+  };
+  root.querySelectorAll('[data-rest]').forEach(b => b.onclick = async () => {
+    const rest = Math.max(30, timer.getPrefs().rest + (+b.dataset.rest));
+    await timer.setPrefs({ rest });
+    root.querySelector('#t-rest').value = timer.fmtSec(rest);
+  });
+
+  // ---- トレ記録のCSV書き出し（PCでの集計用） ----
+  root.querySelector('#wo-csv').onclick = async () => {
+    const rows = (await db.all('workouts'))
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
+    if (!rows.length) { toast('トレ記録がまだありません'); return; }
+    // 先頭のBOM（文字コードの目印）はExcelでの文字化け防止
+    const csv = '﻿日付,種目,セット,重量kg,回数,RPE\n' + rows.flatMap(w =>
+      w.sets.map((s, i) => `${w.date},${w.name},${i + 1},${s.weight},${s.reps},${s.rpe ?? ''}`)
+    ).join('\n');
+    const file = new File([csv], `fitfuel-トレ記録-${todayStr()}.csv`, { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'トレ記録CSV' }); } catch (e) { /* キャンセル時 */ }
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(file);
+      a.download = file.name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+  };
+
+  // ---- 筋トレ記録アプリ（kintore-log）からの移行 ----
+  root.querySelector('#kt-import').onchange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!Array.isArray(data.logs)) throw new Error('logs（セット記録の配列）が見つかりません');
+      if (!confirm(`${data.logs.length}件のセット記録を取り込みます。\n既存のデータはそのまま残ります（同じ日の同じ種目はスキップ）。よろしいですか？`)) return;
+
+      // 1セット1件の記録（{ts,d,ex,w,r}）を「日付×種目」でまとめてfitfuel形式にする
+      const groups = {};
+      for (const l of data.logs) {
+        if (!l.d || !l.ex) continue;
+        (groups[`${l.d}|${l.ex}`] ??= []).push(l);
+      }
+      const have = new Set((await db.all('workouts')).map(w => `${w.date}|${w.name}`));
+      const exByName = new Map((await db.all('exercises')).map(x => [x.name, x.id]));
+      // 筋トレ記録アプリの標準種目のうちfitfuel未登録のものの部位
+      const PART = { 'ローイング': '背中', '腹筋': '腹' };
+      const getExId = async (name) => {
+        let id = exByName.get(name);
+        if (id == null) {
+          id = await db.put('exercises', { name, part: PART[name] || 'その他' });
+          exByName.set(name, id);
+        }
+        return id;
+      };
+
+      let added = 0, skipped = 0;
+      for (const [key, sets] of Object.entries(groups)) {
+        if (have.has(key)) { skipped++; continue; }
+        const date = key.slice(0, 10), name = key.slice(11);
+        sets.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        await db.put('workouts', {
+          date, exerciseId: await getExId(name), name,
+          sets: sets.map(s => ({ weight: +s.w || 0, reps: +s.r || 0, rpe: null })),
+          memo: '', pr: false, ts: sets[0].ts || Date.now(),
+        });
+        added++;
+      }
+      // 種目リストとタイマー設定も引き継ぐ
+      if (Array.isArray(data.settings?.exercises)) {
+        for (const name of data.settings.exercises) await getExId(name);
+      }
+      if (data.settings) {
+        const s = data.settings, patch = {};
+        if (timer.SOUNDS[s.sound]) patch.sound = s.sound;
+        if (typeof s.vol === 'number') patch.vol = Math.min(1, Math.max(0, s.vol));
+        if (typeof s.autoTimer === 'boolean') patch.autoTimer = s.autoTimer;
+        if (typeof s.rest === 'number' && s.rest >= 30) patch.rest = s.rest;
+        await timer.setPrefs(patch);
+      }
+      alert(`移行が完了しました。\n・取り込み: ${added}件（日付×種目）\n・スキップ（既存と重複）: ${skipped}件\nトレ画面と記録→トレのグラフで確認できます。`);
+      refresh();
+    } catch (err) {
+      // 原因: 選んだファイルが筋トレ記録アプリのバックアップJSONではない
+      // 解決策: 筋トレ記録アプリの設定→「保存（JSON）」で作ったファイルを選び直す
+      alert('読み込めませんでした。筋トレ記録アプリでバックアップしたJSONファイルか確認してください。\n詳細: ' + err.message);
+    }
   };
 
   // ---- バックアップ ----
