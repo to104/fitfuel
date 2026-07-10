@@ -104,6 +104,9 @@ export async function render(root) {
         <span class="dt-salt">塩分 ${fmt(total.salt, 1)}g</span>
       </div>
     </div>
+    ${rows.length ? '' : `
+    <button class="btn btn-big" id="copy-prev">📋 前日の記録をコピー</button>
+    <div class="hint">前日と同じ内容から始めて、不要な品は削除・変わった品は追加で調整できます</div>`}
     ${SLOTS.map(section).join('')}
     ${microCardHtml(rows, profile)}`;
 
@@ -118,6 +121,19 @@ export async function render(root) {
     state.calMonth = date.slice(0, 7);
     state.calSel = date;
     setTab('log');
+  };
+  // 前日の記録を丸ごとコピー（この日が空のときだけボタンが出る）
+  const cp = root.querySelector('#copy-prev');
+  if (cp) cp.onclick = async () => {
+    const prev = await mealsOf(addDays(date, -1));
+    if (!prev.length) { toast('前日の食事記録がありません'); return; }
+    const base = Date.now();
+    for (let i = 0; i < prev.length; i++) {
+      const { id, ...rest } = prev[i];   // idを外して新しい記録として保存（元の並び順はtsで維持）
+      await db.put('meals', { ...rest, date, ts: base + i });
+    }
+    toast(`前日の${prev.length}品をコピーしました`);
+    refresh();
   };
   // 追加
   root.querySelectorAll('[data-add-slot]').forEach(b => b.onclick = () =>
