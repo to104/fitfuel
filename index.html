@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>筋トレ・栄養管理</title>
+<meta name="description" content="食事・PFC・体重・トレーニングを一元管理する自分専用アプリ">
+<meta name="theme-color" content="#0A0A0C" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<!-- iPhoneでホーム画面アプリとして全画面表示するための設定 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<!-- defaultにするとiOSがライト/ダークに応じてステータスバー文字色を自動で切り替える -->
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="筋トレ栄養">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<main id="view" class="view"></main>
+
+<!-- 下部タブバー -->
+<nav class="tabbar">
+  <button data-tab="home" class="on" aria-label="ホーム">
+    <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5M5.5 10v9h13v-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>ホーム</span>
+  </button>
+  <button data-tab="meals" aria-label="食事">
+    <svg viewBox="0 0 24 24"><path d="M7 3v7m-2.5-7v4a2.5 2.5 0 0 0 5 0V3M7 10v11M17 3c-1.7 0-3 2-3 5 0 2 .8 3.5 2 4v9m1-18c1.2 1 2 3 2 5s-.8 3.5-2 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>食事</span>
+  </button>
+  <button data-tab="train" aria-label="トレ">
+    <svg viewBox="0 0 24 24"><path d="M2 12h2m16 0h2M6 8v8m3-10v12m6-12v12m3-10v8M9 12h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>トレ</span>
+  </button>
+  <button data-tab="log" aria-label="記録">
+    <svg viewBox="0 0 24 24"><path d="M4 20V10m5.3 10V4m5.4 16v-8m5.3 8V7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span>記録</span>
+  </button>
+  <button data-tab="settings" aria-label="設定">
+    <svg viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h4m4 0h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="10" cy="17" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+    <span>設定</span>
+  </button>
+</nav>
+
+<!-- ボトムシート（食品追加など）の描画先 -->
+<div id="sheet-host"></div>
+<!-- トースト通知 -->
+<div id="toast" role="status"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

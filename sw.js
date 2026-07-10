@@ -1,0 +1,49 @@
+// ============================================================
+// sw.js — Service Worker（オフライン対応）
+// ※アプリ更新時は下のCACHE名と js/app.js の APP_VER を両方上げること
+// ============================================================
+const CACHE = 'fitfuel-v1.0.6';
+
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './css/style.css',
+  './js/app.js',
+  './js/db.js',
+  './js/calc.js',
+  './js/foods.js',
+  './js/ui.js',
+  './js/charts.js',
+  './js/views/onboarding.js',
+  './js/views/home.js',
+  './js/views/meals.js',
+  './js/views/train.js',
+  './js/views/log.js',
+  './js/views/settings.js',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
+];
+
+// インストール時に全ファイルをキャッシュ（一時保存）する
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+});
+
+// 古いバージョンのキャッシュを削除する
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+// キャッシュ優先で応答し、なければネットワークから取得する
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    caches.match(e.request).then(hit => hit || fetch(e.request))
+  );
+});
