@@ -13,7 +13,7 @@ import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
 
-export const APP_VER = '1.2.0';
+export const APP_VER = '1.2.1';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {

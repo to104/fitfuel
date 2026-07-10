@@ -143,7 +143,40 @@ input, select {
   font-variant-numeric: tabular-nums;
 }
 input:focus, select:focus { outline: none; border-color: var(--accent); }
-input[type="range"] { padding: 0; background: none; border: none; height: 30px; accent-color: var(--accent); }
+
+/* スライダー（音量など）
+   共通inputの appearance:none でiOSは描画が消えるため、つまみとレールを自前で描く */
+input[type="range"] {
+  padding: 0; background: none; border: none;
+  height: 34px; margin-top: 8px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 100px; background: var(--card2);
+  border: 1px solid var(--line);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); border: none;
+  margin-top: -8px;   /* レール（高さ6px＋枠2px）の中心につまみを合わせる */
+  box-shadow: var(--shadow-1);
+}
+input[type="range"]::-moz-range-track {
+  height: 6px; border-radius: 100px; background: var(--card2); border: 1px solid var(--line);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); border: none; box-shadow: var(--shadow-1);
+}
+
+/* チェックボックス
+   共通inputの appearance:none を打ち消してOS標準の見た目に戻す（色だけ合わせる） */
+input[type="checkbox"] {
+  -webkit-appearance: checkbox; appearance: auto;
+  display: inline-block; width: 24px; height: 24px; min-width: 24px;
+  padding: 0; margin: 0;
+  accent-color: var(--accent);
+}
 input[type="search"] { margin-bottom: 10px; }
 .form-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .form-row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
