@@ -61,8 +61,6 @@ function playFinish() {
   try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch (e) {}
   playSound(prefs.sound);
   setTimeout(() => playSound(prefs.sound), 1400);   // 聞き逃し防止に2回鳴らす
-  const f = document.getElementById('timer-flash');
-  if (f) { f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 600); }
 }
 
 // バイブを鳴らす。Androidは標準機能、iPhoneはスイッチ切替の触覚フィードバックを利用

@@ -543,13 +543,6 @@ input[type="search"] { margin-bottom: 10px; }
 }
 #rest-bar:active { transform: translateX(-50%) scale(.96); }
 
-/* タイマー終了時のフラッシュ */
-#timer-flash {
-  position: fixed; inset: 0; background: var(--accent);
-  opacity: 0; pointer-events: none; z-index: 300; transition: opacity .15s;
-}
-#timer-flash.on { opacity: .55; }
-
 /* バイブ発生用の隠しスイッチ（画面には見せない） */
 .haptic-hidden { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 
