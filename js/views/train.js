@@ -7,7 +7,7 @@ import * as db from '../db.js';
 import * as timer from '../timer.js';
 import { e1rm, workoutKcal, workoutsKcal } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, addDays, dateLabel, todayStr } from '../ui.js';
-import { state, refresh } from '../app.js';
+import { state, refresh, setTab } from '../app.js';
 
 export async function render(root) {
   const date = state.date;
@@ -26,7 +26,7 @@ export async function render(root) {
     <header class="page-head">
       <div class="date-nav">
         <button class="icon-btn" data-day="-1">‹</button>
-        <div class="date-title">${dateLabel(date)}</div>
+        <button class="date-title" id="go-cal" aria-label="カレンダーで開く">${dateLabel(date)}</button>
         <button class="icon-btn" data-day="1">›</button>
       </div>
     </header>
@@ -69,6 +69,13 @@ export async function render(root) {
     state.date = addDays(state.date, +b.dataset.day);
     refresh();
   });
+  // 日付タップで記録タブのカレンダーへ（この日を選択した状態で開く）
+  root.querySelector('#go-cal').onclick = () => {
+    state.logTab = 'cal';
+    state.calMonth = date.slice(0, 7);
+    state.calSel = date;
+    setTab('log');
+  };
   root.querySelector('#wo-add').onclick = () => openExercisePicker(date);
   root.querySelectorAll('[data-wo]').forEach(b => b.onclick = async () => {
     const w = await db.get('workouts', +b.dataset.wo);

@@ -8,7 +8,7 @@ import * as db from '../db.js';
 import { searchFoods, microsOf } from '../foods.js';
 import { MICROS, microTargets } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, dateLabel } from '../ui.js';
-import { state, refresh } from '../app.js';
+import { state, refresh, setTab } from '../app.js';
 
 export const SLOTS = [
   { k: 'b', label: '朝食' },
@@ -91,7 +91,7 @@ export async function render(root) {
     <header class="page-head">
       <div class="date-nav">
         <button class="icon-btn" data-day="-1">‹</button>
-        <div class="date-title">${dateLabel(date)}</div>
+        <button class="date-title" id="go-cal" aria-label="カレンダーで開く">${dateLabel(date)}</button>
         <button class="icon-btn" data-day="1">›</button>
       </div>
     </header>
@@ -112,6 +112,13 @@ export async function render(root) {
     state.date = addDays(state.date, +b.dataset.day);
     refresh();
   });
+  // 日付タップで記録タブのカレンダーへ（この日を選択した状態で開く）
+  root.querySelector('#go-cal').onclick = () => {
+    state.logTab = 'cal';
+    state.calMonth = date.slice(0, 7);
+    state.calSel = date;
+    setTab('log');
+  };
   // 追加
   root.querySelectorAll('[data-add-slot]').forEach(b => b.onclick = () =>
     openAddSheet(b.dataset.addSlot, date, refresh));
