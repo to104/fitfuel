@@ -6,8 +6,8 @@
 import * as db from '../db.js';
 import * as timer from '../timer.js';
 import { e1rm, workoutKcal, workoutsKcal } from '../calc.js';
-import { esc, fmt, openSheet, closeSheet, toast, addDays, dateLabel, todayStr } from '../ui.js';
-import { state, refresh, setTab } from '../app.js';
+import { esc, fmt, openSheet, closeSheet, toast, dateLabel, todayStr } from '../ui.js';
+import { state, refresh, setTab, changeDay } from '../app.js';
 
 export async function render(root) {
   const date = state.date;
@@ -65,10 +65,8 @@ export async function render(root) {
   const tm = root.querySelector('#timer-mount');
   if (tm) timer.mountCard(tm);
 
-  root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
-    state.date = addDays(state.date, +b.dataset.day);
-    refresh();
-  });
+  // 日付移動（画面の左右スワイプでも移動できる）
+  root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => changeDay(+b.dataset.day));
   // 日付タップで記録タブのカレンダーへ（この日を選択した状態で開く）
   root.querySelector('#go-cal').onclick = () => {
     state.logTab = 'cal';

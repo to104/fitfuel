@@ -1,18 +1,20 @@
 // ============================================================
 // home.js — ホーム（ダッシュボード）
-// 今日のカロリー・PFC・水分・体重・トレ・サプリ・アドバイスを一覧表示。
-// ホームは常に「今日」を表示する。
+// カロリー・PFC・水分・体重・トレ・サプリ・アドバイスを一覧表示。
+// 通常は「今日」を表示し、左右スワイプで前後の日に移動できる。
 // ============================================================
 import * as db from '../db.js';
 import { advice, workoutsKcal, microTargets } from '../calc.js';
 import { microsOf } from '../foods.js';
-import { esc, fmt, ring, toast, todayStr } from '../ui.js';
+import { esc, fmt, ring, toast, todayStr, dateLabel } from '../ui.js';
 import { mealsOf, sumMeals, openAddSheet, SLOTS, microCardHtml } from './meals.js';
 import { openWeightSheet } from './log.js';
-import { refresh, setTab } from '../app.js';
+import { state, refresh, setTab } from '../app.js';
 
 export async function render(root) {
-  const date = todayStr();
+  const date = state.date;
+  const isToday = date === todayStr();
+  const dayWord = isToday ? '今日' : 'この日';
   const [targets, profile, rows, waterRow, weightRow, workouts, supps, suppLog] = await Promise.all([
     db.getSetting('targets', { kcal: 2200, p: 130, f: 60, c: 280, water: 2000 }),
     db.getSetting('profile', {}),
@@ -42,15 +44,15 @@ export async function render(root) {
     microTargets: mTargets,
   });
 
-  const d = new Date();
   const slotSums = Object.fromEntries(SLOTS.map(s => [s.k, sumMeals(rows.filter(r => r.slot === s.k)).kcal]));
 
   root.innerHTML = `
     <header class="page-head home-head">
       <div>
-        <div class="home-date">${d.getMonth() + 1}月${d.getDate()}日（${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]}）</div>
-        <h1 class="home-title">今日のコンディション</h1>
+        <div class="home-date">${dateLabel(date)}</div>
+        <h1 class="home-title">${dayWord}のコンディション</h1>
       </div>
+      ${isToday ? '' : '<button class="chip" id="home-today">今日へ</button>'}
     </header>
 
     <!-- カロリーリング -->
@@ -106,12 +108,12 @@ export async function render(root) {
     <!-- 体重・トレ -->
     <div class="two-col">
       <button class="card mini-card" id="hw">
-        <div class="mini-label">今日の体重</div>
+        <div class="mini-label">${dayWord}の体重</div>
         <div class="mini-val">${weightRow ? `${fmt(weightRow.weight, 1)}<span> kg</span>` : '<span class="mini-add">＋ 入力</span>'}</div>
         ${weightRow?.bodyFat ? `<div class="mini-sub">体脂肪 ${fmt(weightRow.bodyFat, 1)}%</div>` : ''}
       </button>
       <button class="card mini-card" id="ht">
-        <div class="mini-label">今日のトレーニング</div>
+        <div class="mini-label">${dayWord}のトレーニング</div>
         <div class="mini-val">${workouts.length ? `${workouts.length}<span> 種目</span>` : '<span class="mini-add">＋ 記録</span>'}</div>
         ${workouts.length ? `<div class="mini-sub">${esc(workouts.map(w => w.name).slice(0, 3).join('・'))}</div>` : ''}
         ${burn ? `<div class="mini-sub">🔥 消費 約${fmt(burn)} kcal</div>` : ''}
@@ -129,11 +131,14 @@ export async function render(root) {
 
     <!-- アドバイス -->
     <div class="card advice-card">
-      <div class="card-head"><span>今日のアドバイス</span></div>
+      <div class="card-head"><span>${dayWord}のアドバイス</span></div>
       ${tips.map(t => `<div class="advice-row"><span class="advice-ic advice-${t.icon.toLowerCase()}">${t.icon}</span><p>${esc(t.text)}</p></div>`).join('')}
     </div>`;
 
   // ---- イベント ----
+  const todayBtn = root.querySelector('#home-today');
+  if (todayBtn) todayBtn.onclick = () => { state.date = todayStr(); refresh(); };
+
   root.querySelectorAll('[data-slot]').forEach(b =>
     b.onclick = () => openAddSheet(b.dataset.slot, date, refresh));
 

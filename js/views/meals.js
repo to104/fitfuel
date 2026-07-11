@@ -8,7 +8,7 @@ import * as db from '../db.js';
 import { searchFoods, microsOf } from '../foods.js';
 import { MICROS, microTargets } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, dateLabel } from '../ui.js';
-import { state, refresh, setTab } from '../app.js';
+import { state, refresh, setTab, changeDay } from '../app.js';
 
 export const SLOTS = [
   { k: 'b', label: '朝食' },
@@ -110,11 +110,8 @@ export async function render(root) {
     ${SLOTS.map(section).join('')}
     ${microCardHtml(rows, profile)}`;
 
-  // 日付移動
-  root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
-    state.date = addDays(state.date, +b.dataset.day);
-    refresh();
-  });
+  // 日付移動（画面の左右スワイプでも移動できる）
+  root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => changeDay(+b.dataset.day));
   // 日付タップで記録タブのカレンダーへ（この日を選択した状態で開く）
   root.querySelector('#go-cal').onclick = () => {
     state.logTab = 'cal';
