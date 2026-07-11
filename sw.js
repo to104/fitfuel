@@ -2,7 +2,7 @@
 // sw.js — Service Worker（オフライン対応）
 // ※アプリ更新時は下のCACHE名と js/app.js の APP_VER を両方上げること
 // ============================================================
-const CACHE = 'fitfuel-v1.4.0';
+const CACHE = 'fitfuel-v1.5.0';
 
 const ASSETS = [
   './',
@@ -11,6 +11,7 @@ const ASSETS = [
   './css/style.css',
   './js/app.js',
   './js/db.js',
+  './js/sync.js',
   './js/calc.js',
   './js/foods.js',
   './js/ui.js',
@@ -50,6 +51,8 @@ self.addEventListener('activate', (e) => {
 // キャッシュ優先で応答し、なければネットワークから取得する
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // 外部ドメイン（Google認証・Googleドライブ等）は横取りせず素通しする
+  if (new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     caches.match(e.request).then(hit => hit || fetch(e.request))
   );

@@ -12,8 +12,9 @@ import * as train from './views/train.js';
 import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
+import { initSync } from './sync.js';
 
-export const APP_VER = '1.4.0';
+export const APP_VER = '1.5.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -101,6 +102,10 @@ async function seed() {
 async function init() {
   await db.openDB();
   await seed();
+  // クラウド同期の初期化（変更検知の登録・同期オンなら起動時に自動取り込み）。
+  // seed()の後に登録することで、初期データ投入を「未送信の変更」として扱わない
+  // （新しい端末で同期をオンにしたとき、クラウド側を正しく取り込めるようにするため）
+  initSync();
   // 休憩タイマー（前回カウント中に閉じた場合はここで自動再開する）
   await initTimer({ onOpenTrain: () => { state.date = todayStr(); setTab('train'); } });
 

@@ -7,6 +7,7 @@ import * as timer from '../timer.js';
 import { ACTIVITY, GOALS, recommend } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, segmented, segValue, todayStr } from '../ui.js';
 import { refresh, APP_VER } from '../app.js';
+import * as sync from '../sync.js';
 
 export async function render(root) {
   const [profile, targets, supps, exercises, myFoods] = await Promise.all([
@@ -80,6 +81,19 @@ export async function render(root) {
       <button class="btn-ghost" id="food-add">＋ Myフードを直接登録</button>
     </div>
 
+    <div class="sec-title">クラウド同期（Googleドライブ）</div>
+    <div class="card">
+      ${sync.syncOn() ? `
+        <p class="hint" style="margin-top:0">✅ 同期はオンです（${esc(sync.fmtLast())}）</p>
+        <button class="btn" id="sy-now">🔄 今すぐ同期</button>
+        <button class="btn-ghost" id="sy-off">同期をオフにする</button>
+      ` : `
+        <button class="btn" id="sy-on">Googleに接続して同期を有効化</button>
+        <p class="hint">記録をGoogleドライブ経由でPCとスマホの間で自動同期します。<br>
+        <b>初回は必ず、データが入っている端末から有効化してください。</b>2台目の端末では有効化時に「クラウドのデータを取り込む」を選べます。</p>
+      `}
+    </div>
+
     <div class="sec-title">データ</div>
     <div class="card">
       <button class="btn" id="bk-export">バックアップをエクスポート（JSON）</button>
@@ -94,6 +108,32 @@ export async function render(root) {
     </div>
 
     <div class="app-info">筋トレ・栄養管理 v${APP_VER}<br>栄養値は日本食品標準成分表（八訂）ベースの近似値です</div>`;
+
+  // ---- クラウド同期 ----
+  const syOn = root.querySelector('#sy-on');
+  if (syOn) syOn.onclick = async () => {
+    syOn.disabled = true;
+    try {
+      const r = await sync.enableSync();
+      toast(r === 'pulled' ? 'クラウドのデータを取り込みました' : 'この端末の内容をクラウドへ保存しました');
+    } catch (e) {
+      toast('同期を開始できませんでした: ' + (e && e.message || e));
+      sync.disableSync();
+    }
+    refresh();
+  };
+  const syNow = root.querySelector('#sy-now');
+  if (syNow) syNow.onclick = async () => {
+    syNow.disabled = true;
+    await sync.syncNow({ interactive: true });
+    refresh();
+  };
+  const syOff = root.querySelector('#sy-off');
+  if (syOff) syOff.onclick = () => {
+    sync.disableSync();
+    toast('同期をオフにしました');
+    refresh();
+  };
 
   // ---- プロフィール・目標 ----
   const readProfile = () => ({
@@ -312,7 +352,8 @@ export async function render(root) {
   };
   root.querySelector('#bk-wipe').onclick = async () => {
     if (!confirm('本当に全データを削除しますか？この操作は元に戻せません。')) return;
-    if (!confirm('最終確認: 食事・体重・トレーニングの全記録が消えます。')) return;
+    if (!confirm('最終確認: 食事・体重・トレーニングの全記録が消えます。' +
+      (sync.syncOn() ? '\n（クラウド同期がオンのため、クラウド上のデータも削除で上書きされます）' : ''))) return;
     for (const s of db.STORES) await db.clearStore(s);
     location.reload();
   };

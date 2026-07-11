@@ -54,12 +54,36 @@ async function store(name, mode = 'readonly') {
   return db.transaction(name, mode).objectStore(name);
 }
 
+// ---- 書き込み検知（クラウド同期用） ----
+// put/del/clearStore のたびに呼ばれるフックを1つ登録できる。
+// 同期処理自身の書き込みでフックが再発火しないよう silently() で囲めるようにする。
+let _onWrite = null;
+let _silent = false;
+export function setWriteHook(fn) { _onWrite = fn; }
+export async function silently(fn) {
+  _silent = true;
+  try { return await fn(); } finally { _silent = false; }
+}
+function notifyWrite() { if (!_silent && _onWrite) _onWrite(); }
+
 // ---- 基本操作 ----
 export async function get(name, key) { return wrap((await store(name)).get(key)); }
 export async function all(name) { return wrap((await store(name)).getAll()); }
-export async function put(name, val) { return wrap((await store(name, 'readwrite')).put(val)); }
-export async function del(name, key) { return wrap((await store(name, 'readwrite')).delete(key)); }
-export async function clearStore(name) { return wrap((await store(name, 'readwrite')).clear()); }
+export async function put(name, val) {
+  const r = await wrap((await store(name, 'readwrite')).put(val));
+  notifyWrite();
+  return r;
+}
+export async function del(name, key) {
+  const r = await wrap((await store(name, 'readwrite')).delete(key));
+  notifyWrite();
+  return r;
+}
+export async function clearStore(name) {
+  const r = await wrap((await store(name, 'readwrite')).clear());
+  notifyWrite();
+  return r;
+}
 
 // 日付インデックスで絞り込み（meals / workouts 用）
 export async function byDate(name, date) {
