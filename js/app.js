@@ -14,7 +14,7 @@ import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.5.0';
+export const APP_VER = '1.6.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {

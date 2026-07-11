@@ -14,9 +14,9 @@ export const ACTIVITY = [
 ];
 
 export const GOALS = [
-  { v: 'bulk', label: '増量', diff: +300, pPerKg: 2.0 },
-  { v: 'keep', label: '維持', diff: 0,    pPerKg: 1.8 },
-  { v: 'cut',  label: '減量', diff: -400, pPerKg: 2.2 },
+  { v: 'bulk', label: '増量', diff: +300 },
+  { v: 'keep', label: '維持', diff: 0 },
+  { v: 'cut',  label: '減量', diff: -400 },
 ];
 
 // 基礎代謝（Mifflin-St Jeor式＝現在最も標準的な推定式）
@@ -31,12 +31,13 @@ export function tdee(p) {
 }
 
 // プロフィールから推奨カロリー・PFC・水分目標を計算する
+// PFCはカロリー比 3:2:5（タンパク質30%・脂質20%・炭水化物50%）で配分する
 export function recommend(p) {
   const goal = GOALS.find(g => g.v === p.goal) || GOALS[1];
   const kcal = Math.max(1200, tdee(p) + goal.diff);
-  const prot = Math.round(p.weight * goal.pPerKg);          // タンパク質: 体重×係数
-  const fat = Math.round(kcal * 0.25 / 9);                  // 脂質: 総カロリーの25%
-  const carb = Math.max(0, Math.round((kcal - prot * 4 - fat * 9) / 4)); // 残りが炭水化物
+  const prot = Math.round(kcal * 0.30 / 4);   // タンパク質: 30%（4kcal/g）
+  const fat = Math.round(kcal * 0.20 / 9);    // 脂質: 20%（9kcal/g）
+  const carb = Math.round(kcal * 0.50 / 4);   // 炭水化物: 50%（4kcal/g）
   const water = Math.round(p.weight * 35 / 100) * 100;      // 水分: 体重×35ml
   return { kcal, p: prot, f: fat, c: carb, water };
 }

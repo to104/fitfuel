@@ -9,7 +9,7 @@ import { microsOf } from '../foods.js';
 import { esc, fmt, ring, toast, todayStr, dateLabel } from '../ui.js';
 import { mealsOf, sumMeals, openAddSheet, SLOTS, microCardHtml } from './meals.js';
 import { openWeightSheet } from './log.js';
-import { state, refresh, setTab } from '../app.js';
+import { state, refresh, setTab, changeDay } from '../app.js';
 
 export async function render(root) {
   const date = state.date;
@@ -49,7 +49,12 @@ export async function render(root) {
   root.innerHTML = `
     <header class="page-head home-head">
       <div>
-        <div class="home-date">${dateLabel(date)}</div>
+        <!-- 日付移動（‹ › ボタン。スマホは左右スワイプでも移動できる） -->
+        <div class="home-date-nav">
+          <button class="icon-btn icon-btn-sm" data-day="-1" aria-label="前の日">‹</button>
+          <span class="home-date">${dateLabel(date)}</span>
+          <button class="icon-btn icon-btn-sm" data-day="1" aria-label="次の日">›</button>
+        </div>
         <h1 class="home-title">${dayWord}のコンディション</h1>
       </div>
       ${isToday ? '' : '<button class="chip" id="home-today">今日へ</button>'}
@@ -138,6 +143,10 @@ export async function render(root) {
   // ---- イベント ----
   const todayBtn = root.querySelector('#home-today');
   if (todayBtn) todayBtn.onclick = () => { state.date = todayStr(); refresh(); };
+
+  // 日付移動ボタン（PCでも前後の日に移動できる）
+  root.querySelectorAll('[data-day]').forEach(b =>
+    b.onclick = () => changeDay(+b.dataset.day));
 
   root.querySelectorAll('[data-slot]').forEach(b =>
     b.onclick = () => openAddSheet(b.dataset.slot, date, refresh));
