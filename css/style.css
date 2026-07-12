@@ -359,6 +359,22 @@ input[type="search"] { margin-bottom: 10px; }
 .pv-kcal { font-size: 15px; color: var(--sub); }
 .pv-kcal b { font-size: 28px; color: var(--text); font-variant-numeric: tabular-nums; }
 
+/* 1品分のビタミン・ミネラル内訳（追加プレビュー・修正シート共用） */
+.micro-detail-head {
+  font-size: 11px; color: var(--mut); text-align: left;
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+}
+.micro-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-top: 6px; text-align: left; }
+.md-row {
+  display: flex; justify-content: space-between; gap: 4px;
+  font-size: 11.5px; color: var(--sub); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.md-row b { color: var(--text); font-weight: 600; }
+.micro-detail-none {
+  font-size: 11px; color: var(--mut);
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+}
+
 /* ---------- トレーニング ---------- */
 .wo-card { width: 100%; text-align: left; display: block; }
 .wo-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }

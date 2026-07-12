@@ -285,6 +285,11 @@ export function searchFoods(query, customFoods = []) {
 // ============================================================
 const FOOD_INDEX = new Map(FOODS.map(x => [x.name, x]));
 
+// 食品名から100gあたりのビタミン・ミネラル10種を引く（内蔵DBに無ければnull）
+export function microsPer100(name) {
+  return FOOD_INDEX.get(name)?.v || null;
+}
+
 // rows: mealsのレコード配列 → [vd, b1, b2, b6, vc, ca, mg, fe, zn, k] の合計
 export function microsOf(rows) {
   const t = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];

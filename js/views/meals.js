@@ -6,7 +6,7 @@
 // micros = ビタミン・ミネラル10種の合計値（手入力・Myフード分。並び順はcalc.jsのMICROSと同じ）
 // ============================================================
 import * as db from '../db.js';
-import { searchFoods, microsOf } from '../foods.js';
+import { searchFoods, microsOf, microsPer100 } from '../foods.js';
 import { MICROS, microTargets } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, dateLabel } from '../ui.js';
 import { state, refresh, setTab, changeDay } from '../app.js';
@@ -228,7 +228,8 @@ export async function openAddSheet(slot, date, onSaved) {
           <span><i class="dot dot-p"></i>P ${fmt(food.p * s, 1)}g</span>
           <span><i class="dot dot-f"></i>F ${fmt(food.f * s, 1)}g</span>
           <span><i class="dot dot-c"></i>C ${fmt(food.c * s, 1)}g</span>
-        </div>`;
+        </div>
+        ${microDetailHtml(food.v ? food.v.map(x => (x || 0) * s) : null)}`;
       return { n, s };
     };
     calc();
@@ -353,6 +354,8 @@ function openEditSheet(row, onSaved) {
     <button class="btn-danger" id="e-del">この記録を削除</button>`);
 
   const pv = body.querySelector('#e-pv');
+  // ビタミン・ミネラルの100gあたり値: 記録に持っている値（手入力・Myフード）→ 内蔵DB照合 の順で探す
+  const v100 = (row.base100 && row.base100.v) || microsPer100(row.name);
   const calcScaled = () => {
     const g = Math.max(0, +body.querySelector('#e-g').value || 0);
     const s = g / 100, b = row.base100;
@@ -360,7 +363,8 @@ function openEditSheet(row, onSaved) {
     // 手入力・Myフードのビタミン・ミネラルも分量に合わせて再計算
     if (b.v) v.micros = b.v.map(x => r2((x || 0) * s));
     pv.innerHTML = `<div class="pv-kcal"><b>${fmt(v.kcal)}</b> kcal</div>
-      <div class="dt-pfc"><span>P ${fmt(v.p, 1)}g</span><span>F ${fmt(v.f, 1)}g</span><span>C ${fmt(v.c, 1)}g</span></div>`;
+      <div class="dt-pfc"><span>P ${fmt(v.p, 1)}g</span><span>F ${fmt(v.f, 1)}g</span><span>C ${fmt(v.c, 1)}g</span></div>
+      ${microDetailHtml(v100 ? v100.map(x => (x || 0) * s) : null)}`;
     return v;
   };
   if (canScale) {
@@ -372,7 +376,8 @@ function openEditSheet(row, onSaved) {
       calcScaled();
     });
   } else {
-    pv.hidden = true;
+    // 分量で再計算できない記録は、保存済みのビタミン・ミネラルだけ表示する
+    pv.innerHTML = microDetailHtml(row.micros || null);
   }
 
   body.querySelector('#e-save').onclick = async () => {
@@ -397,6 +402,21 @@ function openEditSheet(row, onSaved) {
     closeSheet();
     onSaved();
   };
+}
+
+// 1品分のビタミン・ミネラル内訳（分量換算済みの10値配列）を小さなグリッドで表示する
+// vals が null のときは「データなし」の1行を返す（手入力で未入力の食品など）
+function microDetailHtml(vals) {
+  if (!vals) return '<div class="micro-detail-none">ビタミン・ミネラルのデータはありません</div>';
+  return `
+    <div class="micro-detail-head">ビタミン・ミネラル（この分量あたり）</div>
+    <div class="micro-detail">
+      ${MICROS.map((m, i) => {
+        const v = vals[i] || 0;
+        const dec = v >= 50 ? 0 : v >= 10 ? 1 : 2;   // 大きい値は整数、小さい値は細かく
+        return `<span class="md-row"><span>${m.label}</span><b>${fmt(v, dec)}${m.unit}</b></span>`;
+      }).join('')}
+    </div>`;
 }
 
 // 小数1桁に丸める
