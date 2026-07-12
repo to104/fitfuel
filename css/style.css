@@ -268,6 +268,13 @@ input[type="search"] { margin-bottom: 10px; }
 .bar-micro { background: var(--accent); }
 .micro-note { font-size: 11px; color: var(--mut); margin-top: 10px; line-height: 1.5; }
 
+/* 手入力のビタミン・ミネラル欄（折りたたみ） */
+.micro-manual { margin: 12px 0 4px; }
+.micro-manual summary { font-size: 13px; color: var(--sub); cursor: pointer; padding: 4px 0; }
+.micro-manual-hint { font-size: 11px; color: var(--mut); margin: 4px 0 6px; }
+.micro-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.micro-inputs label { font-size: 12px; }
+
 .advice-card { padding-bottom: 10px; }
 .advice-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
 .advice-row p { font-size: 13.5px; color: var(--text); flex: 1; }

@@ -1,8 +1,9 @@
 // ============================================================
 // meals.js — 食事記録画面＋食品追加シート
 // 追加方法: ①検索（内蔵DB＋Myフード） ②履歴 ③手入力
-// 記録1件 = {date, slot, name, amount(g), kcal, p, f, c, salt, base100, ts}
+// 記録1件 = {date, slot, name, amount(g), kcal, p, f, c, salt, base100, micros, ts}
 // base100 = 100gあたりの栄養値（あとから分量を変えたとき再計算に使う）
+// micros = ビタミン・ミネラル10種の合計値（手入力・Myフード分。並び順はcalc.jsのMICROSと同じ）
 // ============================================================
 import * as db from '../db.js';
 import { searchFoods, microsOf } from '../foods.js';
@@ -42,7 +43,7 @@ export function microCardHtml(rows, profile) {
           </div>`;
         }).join('')}
       </div>
-      <div class="micro-note">内蔵食品DBの食品から自動集計した概算です（手入力・Myフード分は含まれません）</div>
+      <div class="micro-note">内蔵食品DBとの照合＋手入力されたビタミン・ミネラルの合計（概算）です。未入力の手入力食品は0扱いになります</div>
     </div>`;
 }
 
@@ -238,10 +239,14 @@ export async function openAddSheet(slot, date, onSaved) {
     pane.querySelector('#add-go').onclick = () => {
       const { n, s } = calc();
       if (!n) { toast('分量を入力してください'); return; }
+      // Myフードにビタミン・ミネラル(v=100gあたり)があれば分量で按分して記録に持たせる
+      // （内蔵DBの食品は名前照合で自動集計されるので記録には持たせない）
+      const mv = food.my && food.v ? food.v.map(x => r2((x || 0) * s)) : null;
       save({
         name: food.name, amount: n,
         kcal: Math.round(food.kcal * s), p: r1(food.p * s), f: r1(food.f * s), c: r1(food.c * s), salt: r1((food.salt || 0) * s),
-        base100: { kcal: food.kcal, p: food.p, f: food.f, c: food.c, salt: food.salt || 0 },
+        base100: { kcal: food.kcal, p: food.p, f: food.f, c: food.c, salt: food.salt || 0, ...(mv ? { v: food.v } : {}) },
+        ...(mv ? { micros: mv } : {}),
       });
       renderSearch();
     };
@@ -266,7 +271,7 @@ export async function openAddSheet(slot, date, onSaved) {
       </button>`).join('') || '<div class="empty-line">まだ履歴がありません</div>'}</div>`;
     pane.querySelectorAll('.food-row').forEach(b => b.onclick = () => {
       const h = hist[+b.dataset.i];
-      save({ name: h.name, amount: h.amount, kcal: h.kcal, p: h.p, f: h.f, c: h.c, salt: h.salt || 0, base100: h.base100 || null });
+      save({ name: h.name, amount: h.amount, kcal: h.kcal, p: h.p, f: h.f, c: h.c, salt: h.salt || 0, base100: h.base100 || null, micros: h.micros || null });
     });
   }
 
@@ -283,6 +288,13 @@ export async function openAddSheet(slot, date, onSaved) {
         <label>F <span class="unit">g</span><input id="m-f" type="number" inputmode="decimal"></label>
         <label>C <span class="unit">g</span><input id="m-c" type="number" inputmode="decimal"></label>
       </div>
+      <details class="micro-manual">
+        <summary>ビタミン・ミネラル（わかれば入力・任意）</summary>
+        <div class="micro-manual-hint">この食事に含まれる量を入力（空欄は0扱い）</div>
+        <div class="micro-inputs">
+          ${MICROS.map((m, i) => `<label>${m.label} <span class="unit">${m.unit}</span><input data-mi="${i}" type="number" inputmode="decimal"></label>`).join('')}
+        </div>
+      </details>
       <label class="check-line"><input id="m-save" type="checkbox"> Myフードにも保存する（分量gの入力が必要）</label>
       <button class="btn btn-big" id="m-go">追加する</button>`;
     pane.querySelector('#m-go').onclick = async () => {
@@ -293,14 +305,20 @@ export async function openAddSheet(slot, date, onSaved) {
       const p = +pane.querySelector('#m-p').value || 0;
       const fat = +pane.querySelector('#m-f').value || 0;
       const c = +pane.querySelector('#m-c').value || 0;
-      const base100 = g ? { kcal: r1(kcal / g * 100), p: r1(p / g * 100), f: r1(fat / g * 100), c: r1(c / g * 100), salt: 0 } : null;
-      // Myフード登録（100gあたりに換算して保存）
+      // ビタミン・ミネラル: 1つでも入力があれば配列で記録に持たせる（集計はmicrosOfが拾う）
+      const mi = [...pane.querySelectorAll('[data-mi]')].map(el => +el.value || 0);
+      const micros = mi.some(v => v > 0) ? mi.map(r2) : null;
+      const base100 = g ? {
+        kcal: r1(kcal / g * 100), p: r1(p / g * 100), f: r1(fat / g * 100), c: r1(c / g * 100), salt: 0,
+        ...(micros ? { v: micros.map(v => r2(v / g * 100)) } : {}),   // 分量変更時の再計算用（100gあたり）
+      } : null;
+      // Myフード登録（100gあたりに換算して保存。vがあれば検索から追加した分も集計に乗る）
       if (pane.querySelector('#m-save').checked) {
         if (!g) { toast('Myフード保存には分量gが必要です'); return; }
         await db.put('customFoods', { name, kana: '', ...base100, u: ['1食', g] });
         toast(`Myフード「${name}」を登録しました`);
       }
-      save({ name, amount: g, kcal: Math.round(kcal), p: r1(p), f: r1(fat), c: r1(c), salt: 0, base100 });
+      save({ name, amount: g, kcal: Math.round(kcal), p: r1(p), f: r1(fat), c: r1(c), salt: 0, base100, micros });
       renderManual();
     };
   }
@@ -339,6 +357,8 @@ function openEditSheet(row, onSaved) {
     const g = Math.max(0, +body.querySelector('#e-g').value || 0);
     const s = g / 100, b = row.base100;
     const v = { amount: g, kcal: Math.round(b.kcal * s), p: r1(b.p * s), f: r1(b.f * s), c: r1(b.c * s), salt: r1((b.salt || 0) * s) };
+    // 手入力・Myフードのビタミン・ミネラルも分量に合わせて再計算
+    if (b.v) v.micros = b.v.map(x => r2((x || 0) * s));
     pv.innerHTML = `<div class="pv-kcal"><b>${fmt(v.kcal)}</b> kcal</div>
       <div class="dt-pfc"><span>P ${fmt(v.p, 1)}g</span><span>F ${fmt(v.f, 1)}g</span><span>C ${fmt(v.c, 1)}g</span></div>`;
     return v;
@@ -381,3 +401,5 @@ function openEditSheet(row, onSaved) {
 
 // 小数1桁に丸める
 function r1(n) { return Math.round((n || 0) * 10) / 10; }
+// 小数2桁に丸める（ビタミンB群などmg単位の小さい値用）
+function r2(n) { return Math.round((n || 0) * 100) / 100; }
