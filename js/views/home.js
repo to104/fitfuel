@@ -53,7 +53,7 @@ export async function render(root) {
         <!-- 日付移動（‹ › ボタン。スマホは左右スワイプでも移動できる） -->
         <div class="home-date-nav">
           <button class="icon-btn icon-btn-sm" data-day="-1" aria-label="前の日">‹</button>
-          <span class="home-date">${dateLabel(date)}</span>
+          <button class="home-date" id="go-cal" aria-label="カレンダーで開く">${dateLabel(date)}</button>
           <button class="icon-btn icon-btn-sm" data-day="1" aria-label="次の日">›</button>
         </div>
         <h1 class="home-title">${dayWord}のコンディション</h1>
@@ -164,6 +164,14 @@ export async function render(root) {
   // 日付移動ボタン（PCでも前後の日に移動できる）
   root.querySelectorAll('[data-day]').forEach(b =>
     b.onclick = () => changeDay(+b.dataset.day));
+
+  // 日付タップで記録タブのカレンダーへ（この日を選択した状態で開く）
+  root.querySelector('#go-cal').onclick = () => {
+    state.logTab = 'cal';
+    state.calMonth = date.slice(0, 7);
+    state.calSel = date;
+    setTab('log');
+  };
 
   root.querySelectorAll('[data-slot]').forEach(b =>
     b.onclick = () => openAddSheet(b.dataset.slot, date, refresh));
