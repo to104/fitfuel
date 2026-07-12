@@ -267,3 +267,13 @@ export function fmtLast() {
   const d = new Date(iso); if (isNaN(d)) return '未同期';
   return `最終同期 ${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+
+// ---- ホーム画面用: 最終同期日時の短縮表示（当日は時刻のみ・別日は「7/11 22:03」形式） ----
+export function fmtLastShort() {
+  const iso = lastSync(); if (!iso) return '未同期';
+  const d = new Date(iso); if (isNaN(d)) return '未同期';
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? `同期 ${hm}` : `同期 ${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}

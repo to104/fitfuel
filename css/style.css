@@ -85,6 +85,13 @@ body {
 .home-date-nav { display: flex; align-items: center; gap: 6px; margin: 0 0 2px -6px; }
 .icon-btn-sm { width: 28px; height: 28px; border-radius: 9px; font-size: 14px; }
 .home-title { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
+/* ホーム右上の同期ボタン（同期オン時のみ表示）と、その真下の最終同期時刻 */
+.home-head-right { display: flex; align-items: center; gap: 8px; }
+.home-sync { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.home-sync-btn { border-radius: 50%; color: var(--accent); border: 1px solid var(--line); }
+.home-sync-last { font-size: 10px; color: var(--mut); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+.syncing { animation: sync-spin 1s linear infinite; }
 .sec-title { font-size: 13px; font-weight: 700; color: var(--sub); letter-spacing: .08em; margin: 22px 4px 8px; }
 .mut { color: var(--mut); font-weight: 400; font-style: normal; }
 .hint { color: var(--mut); font-size: 12px; margin-top: 8px; }

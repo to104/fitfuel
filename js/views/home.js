@@ -10,6 +10,7 @@ import { esc, fmt, ring, toast, todayStr, dateLabel } from '../ui.js';
 import { mealsOf, sumMeals, openAddSheet, SLOTS, microCardHtml } from './meals.js';
 import { openWeightSheet } from './log.js';
 import { state, refresh, setTab, changeDay } from '../app.js';
+import * as sync from '../sync.js';
 
 export async function render(root) {
   const date = state.date;
@@ -57,7 +58,14 @@ export async function render(root) {
         </div>
         <h1 class="home-title">${dayWord}のコンディション</h1>
       </div>
-      ${isToday ? '' : '<button class="chip" id="home-today">今日へ</button>'}
+      <div class="home-head-right">
+        ${isToday ? '' : '<button class="chip" id="home-today">今日へ</button>'}
+        ${sync.syncOn() ? `
+        <div class="home-sync">
+          <button class="icon-btn home-sync-btn" id="home-sync" aria-label="今すぐ同期">🔄</button>
+          <span class="home-sync-last">${sync.fmtLastShort()}</span>
+        </div>` : ''}
+      </div>
     </header>
 
     <!-- カロリーリング -->
@@ -143,6 +151,15 @@ export async function render(root) {
   // ---- イベント ----
   const todayBtn = root.querySelector('#home-today');
   if (todayBtn) todayBtn.onclick = () => { state.date = todayStr(); refresh(); };
+
+  // 今すぐ同期（同期中はアイコンが回転。完了後に再描画して最終同期時刻を更新）
+  const syncBtn = root.querySelector('#home-sync');
+  if (syncBtn) syncBtn.onclick = async () => {
+    syncBtn.classList.add('syncing');
+    try { await sync.syncNow({ interactive: true }); }
+    finally { syncBtn.classList.remove('syncing'); }
+    refresh();
+  };
 
   // 日付移動ボタン（PCでも前後の日に移動できる）
   root.querySelectorAll('[data-day]').forEach(b =>
