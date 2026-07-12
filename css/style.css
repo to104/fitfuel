@@ -251,7 +251,9 @@ input[type="search"] { margin-bottom: 10px; }
 .water-btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.mini-card { text-align: left; margin: 0; }
+/* min-width:0 でグリッドの子が内容より縮めるようにし、長い種目名でも枠が画面外にはみ出さない */
+.two-col > * { min-width: 0; }
+.mini-card { text-align: left; margin: 0; min-width: 0; }
 .mini-card.wide { width: 100%; display: block; }
 .mini-label { font-size: 12px; font-weight: 700; color: var(--sub); }
 .mini-val { font-size: 24px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }

@@ -26,6 +26,11 @@ export function addDays(dateStr, n) {
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+// 日付文字列から曜日の1文字（日〜土）を返す
+export function weekdayOf(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+}
 export function dateLabel(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   const w = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];

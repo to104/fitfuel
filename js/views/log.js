@@ -4,7 +4,7 @@
 import * as db from '../db.js';
 import { weeklyAverages, e1rm } from '../calc.js';
 import { lineChart, barChart } from '../charts.js';
-import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays } from '../ui.js';
+import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, weekdayOf } from '../ui.js';
 import { state, refresh, setTab } from '../app.js';
 import { sumMeals } from './meals.js';
 
@@ -78,7 +78,7 @@ async function renderTrain(pane) {
     <div class="card">
       <div class="card-head"><span>最近の記録</span></div>
       ${recent.map(d => `
-        <div class="tr-day-head">${+d.slice(5, 7)}/${+d.slice(8)}</div>
+        <div class="tr-day-head">${+d.slice(5, 7)}/${+d.slice(8)}（${weekdayOf(d)}）</div>
         ${byDate[d].map(w => `
           <div class="tr-row">
             <span class="tr-name">${esc(w.name)}${w.pr ? ' 🏆' : ''}</span>
