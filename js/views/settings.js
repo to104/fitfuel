@@ -9,6 +9,9 @@ import { esc, fmt, openSheet, closeSheet, toast, segmented, segValue, todayStr }
 import { refresh, APP_VER } from '../app.js';
 import * as sync from '../sync.js';
 
+// 種目の部位一覧（トレ画面の種目追加と共通の並び）
+const PARTS = ['胸', '背中', '脚', '肩', '腕', '腹', 'その他'];
+
 export async function render(root) {
   const [profile, targets, supps, exercises, myFoods] = await Promise.all([
     db.getSetting('profile', {}),
@@ -55,8 +58,14 @@ export async function render(root) {
 
     <div class="sec-title">トレーニング種目</div>
     <div class="card">
-      ${exercises.map(x => `<div class="manage-row"><span>${esc(x.name)}<i class="mut"> ${esc(x.part || '')}</i></span><button class="icon-btn" data-del-ex="${x.id}">✕</button></div>`).join('') || '<div class="empty-line">未登録</div>'}
-      <p class="hint">種目の追加はトレ画面の「＋種目を記録する」からもできます。</p>
+      ${exercises.map(x => `<div class="manage-row"><span>${esc(x.name)}<i class="mut"> ${esc(x.part || '')}</i></span>
+        <span class="manage-btns"><button class="icon-btn" data-edit-ex="${x.id}" aria-label="編集">✎</button><button class="icon-btn" data-del-ex="${x.id}" aria-label="削除">✕</button></span></div>`).join('') || '<div class="empty-line">未登録</div>'}
+      <div class="new-ex">
+        <input id="ex-name" type="text" placeholder="新しい種目名">
+        <select id="ex-part">${PARTS.map(p => `<option>${p}</option>`).join('')}</select>
+        <button class="btn" id="ex-add">追加</button>
+      </div>
+      <p class="hint">✎で種目名・部位を変更できます。トレ画面の「＋種目を記録する」からも追加できます。</p>
     </div>
 
     <div class="sec-title">休憩タイマー</div>
@@ -180,10 +189,45 @@ export async function render(root) {
   });
 
   // ---- 種目 ----
+  root.querySelector('#ex-add').onclick = async () => {
+    const name = root.querySelector('#ex-name').value.trim();
+    if (!name) { toast('種目名を入力してください'); return; }
+    if (exercises.some(x => x.name === name)) { toast('同じ名前の種目がすでにあります'); return; }
+    await db.put('exercises', { name, part: root.querySelector('#ex-part').value });
+    toast('種目を追加しました');
+    refresh();
+  };
   root.querySelectorAll('[data-del-ex]').forEach(b => b.onclick = async () => {
     if (!confirm('種目を削除しますか？（過去の記録は残ります）')) return;
     await db.del('exercises', +b.dataset.delEx);
     refresh();
+  });
+  root.querySelectorAll('[data-edit-ex]').forEach(b => b.onclick = () => {
+    const x = exercises.find(e => e.id === +b.dataset.editEx);
+    if (!x) return;
+    // 保存済みの部位が一覧にない場合も選べるように先頭へ足す
+    const parts = PARTS.includes(x.part) || !x.part ? PARTS : [x.part, ...PARTS];
+    const body = openSheet('種目を編集', `
+      <label>種目名<input id="ee-name" type="text" value="${esc(x.name)}"></label>
+      <label>部位<select id="ee-part">${parts.map(p =>
+        `<option${p === (x.part || 'その他') ? ' selected' : ''}>${p}</option>`).join('')}</select></label>
+      <button class="btn btn-big" id="ee-save">保存する</button>`);
+    body.querySelector('#ee-save').onclick = async () => {
+      const name = body.querySelector('#ee-name').value.trim();
+      if (!name) { toast('種目名を入力してください'); return; }
+      if (exercises.some(e => e.id !== x.id && e.name === name)) { toast('同じ名前の種目がすでにあります'); return; }
+      await db.put('exercises', { ...x, name, part: body.querySelector('#ee-part').value });
+      // 名前を変えたときは、過去のトレ記録（種目名のコピーを持っている）もまとめて直せるようにする
+      if (name !== x.name) {
+        const recs = await db.byIndex('workouts', 'exerciseId', x.id);
+        if (recs.length && confirm(`過去のトレ記録 ${recs.length}件の種目名も「${name}」に変更しますか？\n（キャンセルすると記録は元の名前のまま残ります）`)) {
+          for (const w of recs) await db.put('workouts', { ...w, name });
+        }
+      }
+      closeSheet();
+      toast('種目を更新しました');
+      refresh();
+    };
   });
 
   // ---- Myフード ----

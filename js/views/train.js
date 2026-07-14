@@ -159,7 +159,8 @@ async function openExercisePicker(date) {
 // 休憩タイマーが自動で始まる（ジムでの1タップ運用。設定でOFFにできる）。
 async function openSetSheet(date, ex, existing) {
   // 前回記録（この記録より前で同じ種目の最新）を探す
-  const history = await db.byIndex('workouts', 'exerciseId', ex.id);
+  // ※種目名の変更で別種目に付け替えたときは取り直す（自己ベスト判定用）
+  let history = await db.byIndex('workouts', 'exerciseId', ex.id);
   const prev = history
     .filter(w => !existing || w.id !== existing.id)
     .filter(w => w.date <= date)
@@ -180,6 +181,7 @@ async function openSetSheet(date, ex, existing) {
     ${isToday ? '<button class="btn btn-big" id="wo-done">✓ セット完了（記録して休憩へ）</button>' : ''}
     <label>メモ<input id="wo-memo" type="text" value="${esc(existing?.memo || '')}" placeholder="フォームの気づきなど"></label>
     <button class="${isToday ? 'btn' : 'btn btn-big'}" id="wo-save">保存して閉じる</button>
+    ${existing ? '<div id="wo-rename-box"></div>' : ''}
     ${existing ? '<button class="btn-danger" id="wo-del">この記録を削除</button>' : ''}`,
     { onClose: refresh });   // ✓で途中保存した後に✕で閉じても一覧に反映されるように
 
@@ -291,4 +293,47 @@ async function openSetSheet(date, ex, existing) {
     closeSheet();
     toast('削除しました');
   };
+
+  // ✎ 種目名を変更: この記録の種目名を直す（既存の記録の付け間違い・改名用）
+  const openRename = async () => {
+    const exList = await db.all('exercises');
+    const box = body.querySelector('#wo-rename-box');
+    box.innerHTML = `
+      <label>新しい種目名
+        <input id="rn-name" type="text" value="${esc(ex.name)}" list="rn-list">
+        <datalist id="rn-list">${exList.map(x => `<option value="${esc(x.name)}">`).join('')}</datalist>
+      </label>
+      <button class="btn" id="rn-save">この記録の種目名を変更する</button>
+      <p class="hint">登録済みの種目名にするとその種目の記録として扱われます（前回比較・グラフも新しい種目側に）。未登録の名前は新しい種目として登録できます。</p>`;
+    box.querySelector('#rn-save').onclick = async () => {
+      const name = box.querySelector('#rn-name').value.trim();
+      if (!name) { toast('種目名を入力してください'); return; }
+      if (name === ex.name) { toast('種目名は変わっていません'); return; }
+      // 登録済み種目なら付け替え、未登録なら新しい種目として登録してから付け替える
+      let target = exList.find(x => x.name === name);
+      if (!target) {
+        if (!confirm(`「${name}」は種目リストに未登録です。\n新しい種目として登録して変更しますか？\n（部位は「その他」になります。設定画面で変更できます）`)) return;
+        const id = await db.put('exercises', { name, part: 'その他' });
+        target = { id, name };
+      }
+      ex.id = target.id;
+      ex.name = name;
+      // 保存済みの記録本体にもすぐ反映する（セットを保存せず閉じても名前が残るように）
+      const w = await db.get('workouts', recId);
+      if (w) await db.put('workouts', { ...w, name, exerciseId: ex.id });
+      // 自己ベスト判定の比較対象も新しい種目の履歴に切り替える
+      history = await db.byIndex('workouts', 'exerciseId', ex.id);
+      const title = body.closest('.sheet')?.querySelector('.sheet-title');
+      if (title) title.textContent = name;
+      closeRename();
+      toast(`種目名を「${name}」に変更しました`);
+    };
+  };
+  // 変更後・キャンセル後は元の✎ボタンに戻す（もう一度変更できるように）
+  const closeRename = () => {
+    const box = body.querySelector('#wo-rename-box');
+    box.innerHTML = '<button class="btn-ghost" id="wo-rename">✎ 種目名を変更</button>';
+    box.querySelector('#wo-rename').onclick = openRename;
+  };
+  if (existing) closeRename();
 }

@@ -470,6 +470,8 @@ input[type="search"] { margin-bottom: 10px; }
   display: flex; justify-content: space-between; align-items: center;
   padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px;
 }
+/* 種目行の右端ボタン群（✎編集＋✕削除） */
+.manage-btns { display: flex; gap: 6px; flex: none; }
 .file-btn { text-align: center; cursor: pointer; margin-bottom: 0; font-size: 15px; color: var(--accent); }
 .app-info { text-align: center; color: var(--mut); font-size: 11.5px; margin: 26px 0 10px; line-height: 1.8; }
 
