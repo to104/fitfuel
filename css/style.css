@@ -216,7 +216,7 @@ input[type="search"] { margin-bottom: 10px; }
 
 /* ---------- タブ（画面内） ---------- */
 .tabs { display: flex; gap: 4px; background: var(--card2); border-radius: 12px; padding: 3px; margin-bottom: 14px; }
-.tab { flex: 1; padding: 9px; border-radius: 10px; font-size: 13px; font-weight: 700; color: var(--sub); }
+.tab { flex: 1; padding: 9px 4px; border-radius: 10px; font-size: 13px; font-weight: 700; color: var(--sub); white-space: nowrap; }
 .tab.on { background: var(--card); color: var(--text); box-shadow: var(--shadow-1); }
 
 /* ---------- リングUI ---------- */

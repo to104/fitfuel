@@ -151,6 +151,7 @@ export async function openAddSheet(slot, date, onSaved) {
   const body = openSheet(`${slotLabel}に追加`, `
     <div class="tabs" id="add-tabs">
       <button class="tab on" data-t="search">検索</button>
+      <button class="tab" data-t="myfood">Myフード</button>
       <button class="tab" data-t="hist">履歴</button>
       <button class="tab" data-t="manual">手入力</button>
     </div>
@@ -161,7 +162,7 @@ export async function openAddSheet(slot, date, onSaved) {
   tabs.onclick = (e) => {
     const t = e.target.closest('.tab'); if (!t) return;
     tabs.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
-    ({ search: renderSearch, hist: renderHist, manual: renderManual })[t.dataset.t]();
+    ({ search: renderSearch, myfood: renderMyFood, hist: renderHist, manual: renderManual })[t.dataset.t]();
   };
 
   // 保存共通処理
@@ -193,11 +194,12 @@ export async function openAddSheet(slot, date, onSaved) {
     q.focus();
   }
 
-  // ---- 分量入力（検索から選んだあと） ----
-  function renderAmount(food) {
+  // ---- 分量入力（検索・Myフードから選んだあと） ----
+  // back = { label, fn }: 「‹ ◯◯に戻る」の文言と戻り先。省略時は検索へ。
+  function renderAmount(food, back = { label: '検索に戻る', fn: renderSearch }) {
     const defG = food.u ? food.u[1] : 100;
     pane.innerHTML = `
-      <button class="btn-ghost back-btn" id="back">‹ 検索に戻る</button>
+      <button class="btn-ghost back-btn" id="back">‹ ${esc(back.label)}</button>
       <div class="amount-head">
         <div class="food-name-big">${esc(food.name)}</div>
         <div class="food-sub">100gあたり ${fmt(food.kcal)}kcal ・ P${fmt(food.p, 1)} F${fmt(food.f, 1)} C${fmt(food.c, 1)}</div>
@@ -236,7 +238,7 @@ export async function openAddSheet(slot, date, onSaved) {
     g.oninput = calc;
     pane.querySelectorAll('.step-btn').forEach(b => b.onclick = () => { g.value = Math.max(0, (+g.value || 0) + +b.dataset.d); calc(); });
     pane.querySelectorAll('.chip').forEach(b => b.onclick = () => { g.value = b.dataset.g; calc(); });
-    pane.querySelector('#back').onclick = renderSearch;
+    pane.querySelector('#back').onclick = back.fn;
     pane.querySelector('#add-go').onclick = () => {
       const { n, s } = calc();
       if (!n) { toast('分量を入力してください'); return; }
@@ -249,8 +251,26 @@ export async function openAddSheet(slot, date, onSaved) {
         base100: { kcal: food.kcal, p: food.p, f: food.f, c: food.c, salt: food.salt || 0, ...(mv ? { v: food.v } : {}) },
         ...(mv ? { micros: mv } : {}),
       });
-      renderSearch();
+      back.fn();
     };
+  }
+
+  // ---- Myフードタブ（登録済みの自作食品を一覧からワンタップ選択） ----
+  function renderMyFood() {
+    if (!customFoods.length) {
+      pane.innerHTML = `<div class="empty-line">Myフードはまだありません。<br>「手入力」タブの「Myフードにも保存する」か、設定画面から登録できます。</div>`;
+      return;
+    }
+    // 内蔵DBの食品と同じ形に整える（my:true で分量入力時にビタミン・ミネラルが記録へ乗る）
+    const list = customFoods.map(cf => ({ ...cf, cat: 'Myフード', my: true }));
+    pane.innerHTML = `<div class="food-list">${list.map((h, i) => `
+      <button class="food-row" data-i="${i}">
+        <div><div class="food-name">${esc(h.name)}</div>
+        <div class="food-sub">Myフード ・ 100gあたり ${fmt(h.kcal)}kcal / P${fmt(h.p, 1)}</div></div>
+        <span class="chev">›</span>
+      </button>`).join('')}</div>`;
+    pane.querySelectorAll('.food-row').forEach(b => b.onclick = () =>
+      renderAmount(list[+b.dataset.i], { label: 'Myフードに戻る', fn: renderMyFood }));
   }
 
   // ---- 履歴タブ（最近使った食品をワンタップ再登録） ----
