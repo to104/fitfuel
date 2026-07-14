@@ -127,6 +127,9 @@ function vol(w) {
   return w.sets.reduce((s, x) => s + (x.weight || 0) * (x.reps || 0), 0);
 }
 
+// 種目の部位一覧（設定画面のPARTSと同内容）
+const PARTS = ['胸', '背中', '脚', '肩', '腕', '腹', 'その他'];
+
 // ---- 種目選択シート ----
 async function openExercisePicker(date) {
   const list = await db.all('exercises');
@@ -138,7 +141,7 @@ async function openExercisePicker(date) {
     </div>
     <div class="new-ex">
       <input id="ex-name" type="text" placeholder="新しい種目名">
-      <select id="ex-part">${['胸', '背中', '脚', '肩', '腕', '腹', 'その他'].map(p => `<option>${p}</option>`).join('')}</select>
+      <select id="ex-part">${PARTS.map(p => `<option>${p}</option>`).join('')}</select>
       <button class="btn" id="ex-add">追加</button>
     </div>`);
 
@@ -294,27 +297,51 @@ async function openSetSheet(date, ex, existing) {
     toast('削除しました');
   };
 
-  // ✎ 種目名を変更: この記録の種目名を直す（既存の記録の付け間違い・改名用）
+  // ✎ 種目名を変更: この記録の種目名・部位を直す（既存の記録の付け間違い・改名用）
   const openRename = async () => {
     const exList = await db.all('exercises');
     const box = body.querySelector('#wo-rename-box');
+    // 部位の選択肢: 標準の一覧＋登録済み種目にある部位（古いデータの独自部位も選べるように）
+    const parts = [...new Set([...PARTS, ...exList.map(x => x.part).filter(Boolean)])];
+    const curPart = exList.find(x => x.id === ex.id)?.part || 'その他';
     box.innerHTML = `
       <label>新しい種目名
         <input id="rn-name" type="text" value="${esc(ex.name)}" list="rn-list">
         <datalist id="rn-list">${exList.map(x => `<option value="${esc(x.name)}">`).join('')}</datalist>
       </label>
-      <button class="btn" id="rn-save">この記録の種目名を変更する</button>
-      <p class="hint">登録済みの種目名にするとその種目の記録として扱われます（前回比較・グラフも新しい種目側に）。未登録の名前は新しい種目として登録できます。</p>`;
+      <label>部位<select id="rn-part">${parts.map(p =>
+        `<option${p === curPart ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <button class="btn" id="rn-save">この記録の種目を変更する</button>
+      <p class="hint">登録済みの種目名にするとその種目の記録として扱われます（前回比較・グラフも新しい種目側に）。未登録の名前は新しい種目として登録できます。部位の変更は種目リストにも反映されます。</p>`;
+    const nameEl = box.querySelector('#rn-name');
+    const partEl = box.querySelector('#rn-part');
+    // 登録済みの種目名を入れたら部位もその種目のものに合わせる（そこから変更も可）
+    nameEl.addEventListener('input', () => {
+      const hit = exList.find(x => x.name === nameEl.value.trim());
+      if (hit) partEl.value = hit.part || 'その他';
+    });
     box.querySelector('#rn-save').onclick = async () => {
-      const name = box.querySelector('#rn-name').value.trim();
+      const name = nameEl.value.trim();
+      const part = partEl.value;
       if (!name) { toast('種目名を入力してください'); return; }
-      if (name === ex.name) { toast('種目名は変わっていません'); return; }
+      // 名前はそのままで部位だけ変えるケース（種目マスタの部位を更新するだけ）
+      if (name === ex.name) {
+        if (part === curPart) { toast('変更はありません'); return; }
+        const cur = exList.find(x => x.id === ex.id);
+        if (cur) await db.put('exercises', { ...cur, part });
+        closeRename();
+        toast(`部位を「${part}」に変更しました`);
+        return;
+      }
       // 登録済み種目なら付け替え、未登録なら新しい種目として登録してから付け替える
       let target = exList.find(x => x.name === name);
       if (!target) {
-        if (!confirm(`「${name}」は種目リストに未登録です。\n新しい種目として登録して変更しますか？\n（部位は「その他」になります。設定画面で変更できます）`)) return;
-        const id = await db.put('exercises', { name, part: 'その他' });
-        target = { id, name };
+        if (!confirm(`「${name}」は種目リストに未登録です。\n新しい種目（部位: ${part}）として登録して変更しますか？`)) return;
+        const id = await db.put('exercises', { name, part });
+        target = { id, name, part };
+      } else if ((target.part || 'その他') !== part) {
+        // 付け替え先の部位も選び直されていたら種目リスト側を更新する
+        await db.put('exercises', { ...target, part });
       }
       ex.id = target.id;
       ex.name = name;
@@ -332,7 +359,7 @@ async function openSetSheet(date, ex, existing) {
   // 変更後・キャンセル後は元の✎ボタンに戻す（もう一度変更できるように）
   const closeRename = () => {
     const box = body.querySelector('#wo-rename-box');
-    box.innerHTML = '<button class="btn-ghost" id="wo-rename">✎ 種目名を変更</button>';
+    box.innerHTML = '<button class="btn-ghost" id="wo-rename">✎ 種目名・部位を変更</button>';
     box.querySelector('#wo-rename').onclick = openRename;
   };
   if (existing) closeRename();
