@@ -4,7 +4,7 @@
 // ============================================================
 import * as db from '../db.js';
 import * as timer from '../timer.js';
-import { ACTIVITY, GOALS, recommend } from '../calc.js';
+import { ACTIVITY, GOALS, recommend, MICROS } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, segmented, segValue, todayStr } from '../ui.js';
 import { refresh, APP_VER } from '../app.js';
 import * as sync from '../sync.js';
@@ -203,10 +203,21 @@ export async function render(root) {
         <label>C <span class="unit">g</span><input id="cf-c" type="number"></label>
       </div>
       <label>よく使う1回分 <span class="unit">g</span><input id="cf-g" type="number" value="100"></label>
+      <details class="micro-manual">
+        <summary>ビタミン・ミネラル（わかれば入力・任意）</summary>
+        <div class="micro-manual-hint">100gあたりの含有量を入力（空欄は0扱い）</div>
+        <div class="micro-inputs">
+          ${MICROS.map((m, i) => `<label>${m.label} <span class="unit">${m.unit}</span><input data-mi="${i}" type="number" inputmode="decimal"></label>`).join('')}
+        </div>
+      </details>
       <button class="btn btn-big" id="cf-save">登録する</button>`);
     body.querySelector('#cf-save').onclick = async () => {
       const name = body.querySelector('#cf-name').value.trim();
       if (!name) { toast('食品名を入力してください'); return; }
+      // ビタミン・ミネラル（100gあたり）: 1つでも入力があれば v 配列として保存
+      // （v があると検索から追加したときも集計・分量按分に乗る）
+      const mi = [...body.querySelectorAll('[data-mi]')].map(el => Math.round((+el.value || 0) * 100) / 100);
+      const v = mi.some(x => x > 0) ? mi : null;
       await db.put('customFoods', {
         name, kana: '',
         kcal: +body.querySelector('#cf-kcal').value || 0,
@@ -214,6 +225,7 @@ export async function render(root) {
         f: +body.querySelector('#cf-f').value || 0,
         c: +body.querySelector('#cf-c').value || 0,
         salt: 0,
+        ...(v ? { v } : {}),
         u: ['1食', +body.querySelector('#cf-g').value || 100],
       });
       closeSheet();

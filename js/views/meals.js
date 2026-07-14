@@ -330,6 +330,13 @@ export async function openAddSheet(slot, date, onSaved) {
 // ============ 既存項目の修正シート ============
 function openEditSheet(row, onSaved) {
   const canScale = !!(row.base100 && row.amount);
+  // ビタミン・ミネラルの100gあたり基準値: 記録が持つ値（手入力・Myフード）→ 内蔵DB照合 の順
+  const dbV100 = microsPer100(row.name);
+  // canScale時に分量へ按分するための100gあたり基準（手入力があれば書き換わる）
+  let mv100 = canScale ? ((row.base100.v && row.base100.v.slice()) || (dbV100 && dbV100.slice()) || null) : null;
+  // ユーザーがビタミン・ミネラル欄を手で編集したか（編集時のみ記録へ焼き込む）
+  let microDirty = false;
+
   const body = openSheet('記録の修正', `
     <div class="amount-head">
       <div class="food-name-big">${esc(row.name)}</div>
@@ -340,7 +347,8 @@ function openEditSheet(row, onSaved) {
       <button class="step-btn" data-d="-10">−10</button>
       <input id="e-g" type="number" inputmode="decimal" value="${row.amount}"><span class="unit-g">g</span>
       <button class="step-btn" data-d="10">＋10</button>
-    </div>` : `
+    </div>
+    <div class="preview card" id="e-pv"></div>` : `
     <div class="form-row2">
       <label>カロリー <span class="unit">kcal</span><input id="e-kcal" type="number" value="${row.kcal}"></label>
       <label>P <span class="unit">g</span><input id="e-p" type="number" value="${row.p}"></label>
@@ -349,47 +357,92 @@ function openEditSheet(row, onSaved) {
       <label>F <span class="unit">g</span><input id="e-f" type="number" value="${row.f}"></label>
       <label>C <span class="unit">g</span><input id="e-c" type="number" value="${row.c}"></label>
     </div>`}
-    <div class="preview card" id="e-pv"></div>
+    <details class="micro-manual">
+      <summary>ビタミン・ミネラル（この分量あたり・任意）</summary>
+      <div class="micro-manual-hint">${canScale
+        ? '分量を変えると自動で増減します。数値を書き換えるとその値が優先されます（空欄は0）'
+        : 'この食事に含まれる量を入力（空欄は0扱い）'}</div>
+      <div class="micro-inputs">
+        ${MICROS.map((m, i) => `<label>${m.label} <span class="unit">${m.unit}</span><input data-mi="${i}" type="number" inputmode="decimal"></label>`).join('')}
+      </div>
+    </details>
     <button class="btn btn-big" id="e-save">保存する</button>
     <button class="btn-danger" id="e-del">この記録を削除</button>`);
 
+  const microInputs = [...body.querySelectorAll('[data-mi]')];
+  const gEl = body.querySelector('#e-g');
   const pv = body.querySelector('#e-pv');
-  // ビタミン・ミネラルの100gあたり値: 記録に持っている値（手入力・Myフード）→ 内蔵DB照合 の順で探す
-  const v100 = (row.base100 && row.base100.v) || microsPer100(row.name);
-  const calcScaled = () => {
-    const g = Math.max(0, +body.querySelector('#e-g').value || 0);
-    const s = g / 100, b = row.base100;
-    const v = { amount: g, kcal: Math.round(b.kcal * s), p: r1(b.p * s), f: r1(b.f * s), c: r1(b.c * s), salt: r1((b.salt || 0) * s) };
-    // 手入力・Myフードのビタミン・ミネラルも分量に合わせて再計算
-    if (b.v) v.micros = b.v.map(x => r2((x || 0) * s));
-    pv.innerHTML = `<div class="pv-kcal"><b>${fmt(v.kcal)}</b> kcal</div>
-      <div class="dt-pfc"><span>P ${fmt(v.p, 1)}g</span><span>F ${fmt(v.f, 1)}g</span><span>C ${fmt(v.c, 1)}g</span></div>
-      ${microDetailHtml(v100 ? v100.map(x => (x || 0) * s) : null)}`;
-    return v;
-  };
+
+  // ビタミン・ミネラル入力欄に「この分量あたり」の値をセットする（0は空欄表示）
+  function fillMicroInputs(s) {
+    const vals = canScale ? (mv100 ? mv100.map(v => (v || 0) * s) : null) : (row.micros || null);
+    microInputs.forEach((el, i) => {
+      const v = vals ? (vals[i] || 0) : 0;
+      el.value = v ? r2(v) : '';
+    });
+  }
+
   if (canScale) {
-    calcScaled();
-    body.querySelector('#e-g').oninput = calcScaled;
+    // PFCプレビューを更新しつつ、ビタミン・ミネラル欄も分量に合わせて按分し直す
+    const recalc = () => {
+      const g = Math.max(0, +gEl.value || 0), s = g / 100, b = row.base100;
+      pv.innerHTML = `<div class="pv-kcal"><b>${fmt(Math.round(b.kcal * s))}</b> kcal</div>
+        <div class="dt-pfc"><span>P ${fmt(b.p * s, 1)}g</span><span>F ${fmt(b.f * s, 1)}g</span><span>C ${fmt(b.c * s, 1)}g</span></div>`;
+      fillMicroInputs(s);
+    };
+    recalc();
+    gEl.oninput = recalc;
     body.querySelectorAll('.step-btn').forEach(b => b.onclick = () => {
-      const g = body.querySelector('#e-g');
-      g.value = Math.max(0, (+g.value || 0) + +b.dataset.d);
-      calcScaled();
+      gEl.value = Math.max(0, (+gEl.value || 0) + +b.dataset.d);
+      recalc();
+    });
+    // 手入力したら、その値を100gあたり基準に反映して以後の分量変更にも追従させる
+    microInputs.forEach((el, i) => el.oninput = () => {
+      microDirty = true;
+      const s = (Math.max(0, +gEl.value || 0)) / 100;
+      if (!s) return;
+      if (!mv100) mv100 = new Array(MICROS.length).fill(0);
+      mv100[i] = (+el.value || 0) / s;
     });
   } else {
-    // 分量で再計算できない記録は、保存済みのビタミン・ミネラルだけ表示する
-    pv.innerHTML = microDetailHtml(row.micros || null);
+    fillMicroInputs(1);
+    microInputs.forEach(el => el.oninput = () => { microDirty = true; });
   }
 
   body.querySelector('#e-save').onclick = async () => {
     let upd;
-    if (canScale) upd = { ...row, ...calcScaled() };
-    else upd = {
-      ...row,
-      kcal: +body.querySelector('#e-kcal').value || 0,
-      p: +body.querySelector('#e-p').value || 0,
-      f: +body.querySelector('#e-f').value || 0,
-      c: +body.querySelector('#e-c').value || 0,
-    };
+    if (canScale) {
+      const g = Math.max(0, +gEl.value || 0), s = g / 100, b = row.base100;
+      const newBase = { ...b };
+      let micros;
+      if (microDirty) {
+        // 手入力された「この分量あたり」の値を記録へ焼き込み、100gあたりもbase100へ保存
+        const mi = microInputs.map(el => +el.value || 0);
+        micros = mi.some(v => v > 0) ? mi.map(r2) : null;
+        if (micros && s) newBase.v = micros.map(v => r2(v / s));
+        else delete newBase.v;
+      } else {
+        // 未編集: 従来どおり base100.v があれば分量で按分（DB照合のみの食品はnullのまま）
+        micros = b.v ? b.v.map(x => r2((x || 0) * s)) : null;
+      }
+      upd = {
+        ...row, amount: g,
+        kcal: Math.round(b.kcal * s), p: r1(b.p * s), f: r1(b.f * s), c: r1(b.c * s), salt: r1((b.salt || 0) * s),
+        base100: newBase, micros,
+      };
+    } else {
+      upd = {
+        ...row,
+        kcal: +body.querySelector('#e-kcal').value || 0,
+        p: +body.querySelector('#e-p').value || 0,
+        f: +body.querySelector('#e-f').value || 0,
+        c: +body.querySelector('#e-c').value || 0,
+      };
+      if (microDirty) {
+        const mi = microInputs.map(el => +el.value || 0);
+        upd.micros = mi.some(v => v > 0) ? mi.map(r2) : null;
+      }
+    }
     await db.put('meals', upd);
     toast('修正しました');
     closeSheet();
