@@ -199,7 +199,7 @@ async function renderCalendar(pane) {
   const [y, m] = ym.split('-').map(Number);
   const first = new Date(y, m - 1, 1);
   const days = new Date(y, m, 0).getDate();
-  const lead = (first.getDay() + 6) % 7; // 月曜始まり
+  const lead = first.getDay(); // 日曜始まり（日曜=0）
 
   // 月内データをまとめて取得して日付ごとに集計する
   const [meals, workouts, weights, targets] = await Promise.all([
@@ -240,7 +240,7 @@ async function renderCalendar(pane) {
         <div class="date-title">${y}年${m}月</div>
         <button class="icon-btn" data-m="${mNav(1)}">›</button>
       </div>
-      <div class="cal-grid cal-head">${['月', '火', '水', '木', '金', '土', '日'].map(w => `<div>${w}</div>`).join('')}</div>
+      <div class="cal-grid cal-head">${['日', '月', '火', '水', '木', '金', '土'].map(w => `<div>${w}</div>`).join('')}</div>
       <div class="cal-grid">${cells.join('')}</div>
       <div class="cal-legend">
         <span><i class="cdot" style="background:var(--chart-1)"></i>食事</span>
