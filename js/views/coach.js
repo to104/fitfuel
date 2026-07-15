@@ -143,6 +143,7 @@ async function renderMenu(root, menu) {
           ${!rec && it.note ? `<span class="co-note">${esc(it.note)}</span>` : ''}
         </span>
       </button>
+      ${rec ? '' : `<button class="icon-btn co-edit" data-edit="${it.uid}" aria-label="提案の重量・回数を調整">✎</button>`}
       <button class="icon-btn co-del" data-del="${it.uid}" aria-label="この種目を外す">✕</button>
     </div>`;
   };
@@ -173,7 +174,7 @@ async function renderMenu(root, menu) {
 
     ${warmups.length ? `<div class="sec-title">ウォームアップ</div><div class="card co-list">${warmups.map(wuRow).join('')}</div>` : ''}
 
-    <div class="sec-title">${isFuture ? 'メニュー（予定）' : 'メニュー（タップで記録）'}</div>
+    <div class="sec-title">${isFuture ? 'メニュー（予定・タップで調整）' : 'メニュー（タップで記録）'}</div>
     <div class="card co-list">
       ${exItems.map(exRow).join('') || '<div class="empty-line">種目がありません。下から追加してください</div>'}
       <button class="btn-ghost" id="co-add">＋ 種目を追加</button>
@@ -186,8 +187,8 @@ async function renderMenu(root, menu) {
 
     <button class="btn-ghost" id="co-regen">メニューを作り直す（日タイプ・時間の変更）</button>
     <p class="hint">${isFuture
-      ? 'この日の予定メニューです。当日になったらタップで記録できます（重量・回数は当日の直前記録から計算し直されます＝作り直すと最新になります）。'
-      : '✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>
+      ? 'この日の予定メニューです。種目をタップすると重量・回数・セット数を調整できます。記録は当日になってからです（メニューを作り直すと調整もリセットされ、直前の記録から計算し直されます）。'
+      : '✎で提案の重量・回数・セット数を調整できます。✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>
     </div>`;
 
   root.querySelector('#co-back').onclick = () => setTab('train');
@@ -201,11 +202,18 @@ async function renderMenu(root, menu) {
     refresh();
   });
 
-  // 種目タップ → クイック記録シート（明日以降の予定は記録できない）
+  // 種目タップ → クイック記録シート（明日以降の予定は記録できないので調整シートを開く）
   root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
-    if (isFuture) { toast('予定メニューです。当日になったらタップで記録できます'); return; }
     const it = menu.items.find(x => x.uid === +b.dataset.open);
-    if (it) openQuickLog(it, date);
+    if (!it) return;
+    if (isFuture) { openEditProposal(menu, it); return; }
+    openQuickLog(it, date);
+  });
+
+  // ✎ で提案の重量・回数を調整
+  root.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+    const it = menu.items.find(x => x.uid === +b.dataset.edit);
+    if (it) openEditProposal(menu, it);
   });
 
   // ✕ で今日のメニューから外す
@@ -281,6 +289,97 @@ async function openAddSheet(menu) {
     const part = body.querySelector('#co-new-part').value;
     const id = await db.put('exercises', { name, part });
     await addToMenu({ id, name, part });
+  };
+}
+
+// ============================================================
+// 提案調整シート
+// AIが提案した重量・回数・セット数を、記録する前に自分好みに変更する。
+// クイック記録と同じ±操作。変更は未編集の後続セットにも引き継がれる。
+// 保存先はメニュー（coachMenu）のみ＝過去の記録には影響しない。
+// ============================================================
+async function openEditProposal(menu, item) {
+  const rows = item.sets.map(s => ({ w: s.weight || 0, r: s.reps || 10 }));
+  if (!rows.length) rows.push({ w: 0, r: 10 });
+  const edited = rows.map(() => false);
+  let stepAt = -1, stepK = '';   // 開いている±パネルの行と対象（w/r）
+
+  const body = openSheet(`${item.name}（提案の調整）`, `
+    <div class="prev-box">${esc(item.note || '提案メニュー')}</div>
+    <div id="ep-rows"></div>
+    <button class="btn-ghost" id="ep-add">＋ セットを追加</button>
+    <button class="btn btn-big" id="ep-save">この内容に変更する</button>
+    <p class="hint">数値をタップすると±で調整できます。変更は後ろのセットにも引き継がれます。<br>ここで変えるのは提案（予定）だけで、過去の記録には影響しません。</p>`);
+
+  const rowsEl = body.querySelector('#ep-rows');
+  const draw = () => {
+    rowsEl.innerHTML = rows.map((s, i) => `
+      <div class="q-row">
+        <span class="set-no">${i + 1}</span>
+        <button class="q-val${stepAt === i && stepK === 'w' ? ' on' : ''}" data-i="${i}" data-k="w">${s.w > 0 ? `${fmt(s.w, 1)}<i>kg</i>` : '自重'}</button>
+        <button class="q-val${stepAt === i && stepK === 'r' ? ' on' : ''}" data-i="${i}" data-k="r">${s.r}<i>回</i></button>
+        ${rows.length > 1 ? `<button class="icon-btn q-del" data-rm="${i}" aria-label="このセットを減らす">✕</button>` : '<span></span>'}
+      </div>
+      ${stepAt === i ? `
+      <div class="q-step">
+        <button data-d="-1">−${stepK === 'w' ? '2.5' : '1'}</button>
+        <b>${stepK === 'w' ? (s.w > 0 ? `${fmt(s.w, 1)}kg` : '自重') : `${s.r}回`}</b>
+        <button data-d="1">＋${stepK === 'w' ? '2.5' : '1'}</button>
+      </div>` : ''}`).join('');
+  };
+  draw();
+
+  rowsEl.onclick = (e) => {
+    // ±パネルの開閉（重量・回数の数値ボタン）
+    const val = e.target.closest('.q-val');
+    if (val) {
+      const i = +val.dataset.i, k = val.dataset.k;
+      if (stepAt === i && stepK === k) { stepAt = -1; } else { stepAt = i; stepK = k; }
+      draw();
+      return;
+    }
+    // ±ボタン: 値を変更し、未編集の後続セットにも引き継ぐ
+    const st = e.target.closest('[data-d]');
+    if (st && stepAt >= 0) {
+      const d = +st.dataset.d, s = rows[stepAt];
+      if (stepK === 'w') s.w = Math.max(0, Math.round((s.w + d * 2.5) * 10) / 10);
+      else s.r = Math.max(1, s.r + d);
+      edited[stepAt] = true;
+      for (let j = stepAt + 1; j < rows.length; j++) {
+        if (!edited[j]) { rows[j].w = s.w; rows[j].r = s.r; }
+      }
+      draw();
+      return;
+    }
+    // ✕: このセットを減らす
+    const rm = e.target.closest('[data-rm]');
+    if (rm) {
+      const i = +rm.dataset.rm;
+      rows.splice(i, 1);
+      edited.splice(i, 1);
+      stepAt = -1;
+      draw();
+    }
+  };
+
+  body.querySelector('#ep-add').onclick = () => {
+    const last = rows[rows.length - 1];
+    rows.push({ w: last.w, r: last.r });
+    edited.push(true);   // コピーした行は引き継ぎで上書きしない
+    stepAt = -1;
+    draw();
+  };
+
+  body.querySelector('#ep-save').onclick = async () => {
+    item.sets = rows.map(s => ({ weight: s.w, reps: s.r, rpe: null }));
+    item.rest = coach.restFor(item.sets, !!item.extra);
+    if (!(item.note || '').includes('自分で調整')) {
+      item.note = (item.note ? `${item.note}・` : '') + '自分で調整';
+    }
+    await coach.saveMenu(menu);
+    closeSheet();
+    toast(`「${item.name}」の提案を変更しました`);
+    refresh();
   };
 }
 
