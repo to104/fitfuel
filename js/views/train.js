@@ -5,17 +5,19 @@
 // ============================================================
 import * as db from '../db.js';
 import * as timer from '../timer.js';
+import * as coach from '../coach.js';
 import { e1rm, workoutKcal, workoutsKcal } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, dateLabel, todayStr } from '../ui.js';
 import { state, refresh, setTab, changeDay } from '../app.js';
 
 export async function render(root) {
   const date = state.date;
-  const [rows, profile, loggedWeight, bright] = await Promise.all([
+  const [rows, profile, loggedWeight, bright, menu] = await Promise.all([
     db.byDate('workouts', date),
     db.getSetting('profile', {}),
     db.latestWeightUpTo(date),
     db.getSetting('accentBright', 100),   // オレンジの明るさ（%）
+    coach.getMenu(),                      // AIトレーナーの今日のメニュー（今日以外はnull）
   ]);
   rows.sort((a, b) => (a.ts || 0) - (b.ts || 0));
   // 消費カロリー推定に使う体重（その日以前の記録→なければプロフィール値）
@@ -31,7 +33,18 @@ export async function render(root) {
       </div>
     </header>
 
-    ${date === todayStr() ? '<div id="timer-mount"></div>' : ''}
+    ${date === todayStr() ? `
+    <button class="card coach-card" id="go-coach">
+      <span class="coach-card-ico" aria-hidden="true">🤖</span>
+      <span class="coach-card-main">
+        <b>AIトレーナー</b>
+        <span class="coach-card-sub">${menu
+          ? `今日のメニュー進行中（${menu.items.filter(it => it.kind === 'ex' ? rows.some(w => w.exerciseId === it.exId) : it.done).length} / ${menu.items.length}）`
+          : '記録をもとに今日のメニューを提案します'}</span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+    <div id="timer-mount"></div>` : ''}
 
     ${burn ? `
     <div class="card burn-card">
@@ -74,6 +87,8 @@ export async function render(root) {
     state.calSel = date;
     setTab('log');
   };
+  const goCoach = root.querySelector('#go-coach');
+  if (goCoach) goCoach.onclick = () => setTab('coach');
   root.querySelector('#wo-add').onclick = () => openExercisePicker(date);
   root.querySelectorAll('[data-wo]').forEach(b => b.onclick = async () => {
     const w = await db.get('workouts', +b.dataset.wo);
@@ -160,7 +175,8 @@ async function openExercisePicker(date) {
 // ---- セット入力シート ----
 // 今日の記録では「✓ セット完了」で1セットずつ途中保存でき、
 // 休憩タイマーが自動で始まる（ジムでの1タップ運用。設定でOFFにできる）。
-async function openSetSheet(date, ex, existing) {
+// proposal: AIトレーナーの提案セット（あれば前回記録より優先して初期値にする）
+export async function openSetSheet(date, ex, existing, proposal = null) {
   // 前回記録（この記録より前で同じ種目の最新）を探す
   // ※種目名の変更で別種目に付け替えたときは取り直す（自己ベスト判定用）
   let history = await db.byIndex('workouts', 'exerciseId', ex.id);
@@ -170,6 +186,7 @@ async function openSetSheet(date, ex, existing) {
     .sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0))[0];
 
   const initSets = existing?.sets
+    || (proposal ? proposal.map(s => ({ ...s })) : null)
     || (prev ? prev.sets.map(s => ({ ...s })) : [{ weight: '', reps: '', rpe: '' }]);
 
   const isToday = date === todayStr();

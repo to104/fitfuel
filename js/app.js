@@ -12,9 +12,10 @@ import * as train from './views/train.js';
 import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
+import * as coachView from './views/coach.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.15.0';
+export const APP_VER = '1.16.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -22,7 +23,8 @@ export const state = {
   date: todayStr(),   // 食事・トレ画面が表示している日付
 };
 
-const VIEWS = { home, meals, train, log, settings };
+// coach（AIトレーナー）はタブバーに出さない画面。トレ画面のカードから開く
+const VIEWS = { home, meals, train, log, settings, coach: coachView };
 
 // タブを切り替える
 export function setTab(tab) {
@@ -72,10 +74,12 @@ function initSwipeNav() {
 
 // いま開いている画面を描き直す（データ変更後に呼ぶ）
 export async function refresh() {
+  // AIトレーナー画面はトレのタブを点灯したままにする（トレの一部という扱い）
+  const tabOf = state.tab === 'coach' ? 'train' : state.tab;
   document.querySelectorAll('.tabbar button').forEach(b =>
-    b.classList.toggle('on', b.dataset.tab === state.tab));
-  // トレ画面だけオレンジの明るさ設定を反映し、他の画面では標準色に戻す
-  await train.applyAccent(state.tab === 'train');
+    b.classList.toggle('on', b.dataset.tab === tabOf));
+  // トレ系画面だけオレンジの明るさ設定を反映し、他の画面では標準色に戻す
+  await train.applyAccent(state.tab === 'train' || state.tab === 'coach');
   try {
     await VIEWS[state.tab].render(document.getElementById('view'));
   } catch (err) {

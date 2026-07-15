@@ -4,6 +4,7 @@
 // ============================================================
 import * as db from '../db.js';
 import * as timer from '../timer.js';
+import * as coach from '../coach.js';
 import { ACTIVITY, GOALS, recommend, MICROS } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, segmented, segValue, todayStr } from '../ui.js';
 import { refresh, APP_VER } from '../app.js';
@@ -13,12 +14,13 @@ import * as sync from '../sync.js';
 const PARTS = ['胸', '背中', '脚', '肩', '腕', '腹', 'その他'];
 
 export async function render(root) {
-  const [profile, targets, supps, exercises, myFoods] = await Promise.all([
+  const [profile, targets, supps, exercises, myFoods, split] = await Promise.all([
     db.getSetting('profile', {}),
     db.getSetting('targets', {}),
     db.all('supplements'),
     db.all('exercises'),
     db.all('customFoods'),
+    coach.getSplit(),
   ]);
   const tp = timer.getPrefs();
 
@@ -66,6 +68,32 @@ export async function render(root) {
         <button class="btn" id="ex-add">追加</button>
       </div>
       <p class="hint">✎で種目名・部位を変更できます。トレ画面の「＋種目を記録する」からも追加できます。</p>
+    </div>
+
+    <div class="sec-title">AIトレーナー（分割パターン）</div>
+    <div class="card">
+      ${coach.DAY_TYPES.map(day => `
+        <div class="split-day">
+          <div class="split-head"><b>${day.label}の日</b><span class="mut">メイン: ${day.mains.join('・')}</span></div>
+          <div class="split-chips">
+            ${(split.extras[day.key] || []).map(p =>
+              `<button class="chip split-chip" data-sp-del="${day.key}|${esc(p)}">＋${esc(p)} ✕</button>`).join('')}
+            <select class="sp-add" data-sp-add="${day.key}">
+              <option value="">＋追い込み部位</option>
+              ${coach.EXTRA_PARTS.filter(p => !day.mains.includes(p) && !(split.extras[day.key] || []).includes(p))
+                .map(p => `<option>${esc(p)}</option>`).join('')}
+            </select>
+          </div>
+        </div>`).join('')}
+      <hr class="sep">
+      <label>基本のトレーニング時間
+        <div class="amount-row">
+          <button class="step-btn" data-bt="-15">−15</button>
+          <input id="sp-time" readonly value="${split.baseTime}分">
+          <button class="step-btn" data-bt="15">＋15</button>
+        </div>
+      </label>
+      <p class="hint">追い込み部位＝その日のメインに加えて軽く追加する部位。メニュー生成時に補助種目として1種目ずつ入ります。同じ部位が続く場合はAIが自動でボリュームを軽くします。</p>
     </div>
 
     <div class="sec-title">休憩タイマー</div>
@@ -228,6 +256,27 @@ export async function render(root) {
       toast('種目を更新しました');
       refresh();
     };
+  });
+
+  // ---- AIトレーナー（分割パターン。変更したら即保存） ----
+  root.querySelectorAll('[data-sp-del]').forEach(b => b.onclick = async () => {
+    const [key, part] = b.dataset.spDel.split('|');
+    const extras = { ...split.extras, [key]: (split.extras[key] || []).filter(p => p !== part) };
+    await coach.setSplit({ extras });
+    refresh();
+  });
+  root.querySelectorAll('[data-sp-add]').forEach(sel => sel.onchange = async () => {
+    if (!sel.value) return;
+    const key = sel.dataset.spAdd;
+    const extras = { ...split.extras, [key]: [...(split.extras[key] || []), sel.value] };
+    await coach.setSplit({ extras });
+    refresh();
+  });
+  root.querySelectorAll('[data-bt]').forEach(b => b.onclick = async () => {
+    const t = Math.min(180, Math.max(30, split.baseTime + (+b.dataset.bt)));
+    split.baseTime = t;
+    await coach.setSplit({ baseTime: t });
+    root.querySelector('#sp-time').value = `${t}分`;
   });
 
   // ---- Myフード ----
