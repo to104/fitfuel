@@ -8,7 +8,7 @@ import * as coach from '../coach.js';
 import * as timer from '../timer.js';
 import { e1rm } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, dateLabel } from '../ui.js';
-import { refresh, setTab } from '../app.js';
+import { state, refresh, setTab } from '../app.js';
 import { openSetSheet } from './train.js';
 
 // バッジ（提案の種類）の表示定義
@@ -21,17 +21,22 @@ const BADGES = {
 };
 
 export async function render(root) {
-  const menu = await coach.getMenu();
-  if (!menu) return renderSetup(root);
+  // トレ画面で表示していた日付のメニューを扱う（今日＝従来どおり／明日以降＝予定の作成）
+  if (state.date < todayStr()) state.date = todayStr();   // 過去の日付では開かない
+  const menu = await coach.getMenu(state.date);
+  if (!menu) return renderSetup(root, state.date);
   return renderMenu(root, menu);
 }
 
-const headHTML = () => `
+const headHTML = (date) => `
   <header class="coach-head">
     <button class="icon-btn" id="co-back" aria-label="トレ画面へ戻る">‹</button>
     <h1 class="coach-title">AIトレーナー</h1>
-    <span class="coach-date">${dateLabel(todayStr())}</span>
+    <span class="coach-date">${dateLabel(date)}</span>
   </header>`;
+
+// 見出し・文言用: 今日なら「今日」、明日以降なら「7月16日（木）」
+const dayWord = (date) => date === todayStr() ? '今日' : dateLabel(date);
 
 // セット配列を「70kg × 8回 × 3セット」形式にまとめる（バラバラなら個別表記）
 function setsLabel(sets) {
@@ -45,15 +50,15 @@ function setsLabel(sets) {
 // ============================================================
 // セットアップ画面（日タイプ・時間を選んで生成）
 // ============================================================
-async function renderSetup(root) {
-  const [sug, split] = await Promise.all([coach.suggestDay(), coach.getSplit()]);
+async function renderSetup(root, date) {
+  const [sug, split] = await Promise.all([coach.suggestDay(date), coach.getSplit()]);
   let dayKey = sug.key;
   let time = split.baseTime;
   const times = [...new Set([...coach.TIME_CHOICES, split.baseTime])].sort((a, b) => a - b);
 
   root.innerHTML = `
-    ${headHTML()}
-    <div class="sec-title">今日の日タイプ</div>
+    ${headHTML(date)}
+    <div class="sec-title">${esc(dayWord(date))}の日タイプ</div>
     <div class="card">
       <div class="day-seg">
         ${coach.DAY_TYPES.map(t => `
@@ -64,7 +69,7 @@ async function renderSetup(root) {
       <p class="hint" id="day-reason"></p>
       <div class="co-extras" id="day-extras"></div>
     </div>
-    <div class="sec-title">今日のトレーニング時間</div>
+    <div class="sec-title">トレーニング時間</div>
     <div class="card">
       <div class="time-seg">
         ${times.map(m => `<button class="day-btn" data-time="${m}">${m}分</button>`).join('')}
@@ -91,8 +96,8 @@ async function renderSetup(root) {
   root.querySelector('#co-gen').onclick = async (e) => {
     e.target.disabled = true;
     try {
-      await coach.generateMenu({ dayKey, time });
-      toast('今日のメニューを作成しました');
+      await coach.generateMenu({ dayKey, time, date });
+      toast(`${dayWord(date)}のメニューを作成しました`);
     } catch (err) {
       console.error(err);
       toast('メニューを作成できませんでした: ' + err.message);
@@ -105,8 +110,9 @@ async function renderSetup(root) {
 // メニュー画面（チェックリスト＋編集）
 // ============================================================
 async function renderMenu(root, menu) {
-  const today = todayStr();
-  const rows = await db.byDate('workouts', today);
+  const date = menu.date;
+  const isFuture = date > todayStr();   // 明日以降＝予定（閲覧・編集のみ。記録は当日から）
+  const rows = await db.byDate('workouts', date);
   // 記録済み判定: 同じ種目の今日の記録があれば「済」扱い（最新の1件を表示に使う）
   const recOf = (exId) => rows
     .filter(w => w.exerciseId === exId)
@@ -152,7 +158,7 @@ async function renderMenu(root, menu) {
     </div>`;
 
   root.innerHTML = `
-    ${headHTML()}
+    ${headHTML(date)}
     <div class="co-meta">
       <span class="co-extra-chip">${day.label}の日</span>
       <span class="co-time-chip">目安 約${est}分 / ${menu.time}分</span>
@@ -164,7 +170,7 @@ async function renderMenu(root, menu) {
 
     ${warmups.length ? `<div class="sec-title">ウォームアップ</div><div class="card co-list">${warmups.map(wuRow).join('')}</div>` : ''}
 
-    <div class="sec-title">メニュー（タップで記録）</div>
+    <div class="sec-title">${isFuture ? 'メニュー（予定）' : 'メニュー（タップで記録）'}</div>
     <div class="card co-list">
       ${exItems.map(exRow).join('') || '<div class="empty-line">種目がありません。下から追加してください</div>'}
       <button class="btn-ghost" id="co-add">＋ 種目を追加</button>
@@ -176,7 +182,9 @@ async function renderMenu(root, menu) {
     </div>
 
     <button class="btn-ghost" id="co-regen">メニューを作り直す（日タイプ・時間の変更）</button>
-    <p class="hint">✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。</p>`;
+    <p class="hint">${isFuture
+      ? 'この日の予定メニューです。当日になったらタップで記録できます（重量・回数は当日の直前記録から計算し直されます＝作り直すと最新になります）。'
+      : '✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>`;
 
   root.querySelector('#co-back').onclick = () => setTab('train');
 
@@ -189,10 +197,11 @@ async function renderMenu(root, menu) {
     refresh();
   });
 
-  // 種目タップ → クイック記録シート
+  // 種目タップ → クイック記録シート（明日以降の予定は記録できない）
   root.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
+    if (isFuture) { toast('予定メニューです。当日になったらタップで記録できます'); return; }
     const it = menu.items.find(x => x.uid === +b.dataset.open);
-    if (it) openQuickLog(it);
+    if (it) openQuickLog(it, date);
   });
 
   // ✕ で今日のメニューから外す
@@ -209,7 +218,7 @@ async function renderMenu(root, menu) {
   root.querySelector('#co-add').onclick = () => openAddSheet(menu);
   root.querySelector('#co-regen').onclick = async () => {
     if (!confirm('メニューを作り直しますか？\n（記録済みのトレーニングはそのまま残ります）')) return;
-    await coach.clearMenu();
+    await coach.clearMenu(date);
     refresh();
   };
 }
@@ -241,10 +250,10 @@ async function openAddSheet(menu) {
     </div>
     <p class="hint">重量・回数は前回の記録から自動で提案されます（記録がない種目は自重×10回から）。<br>新しく登録した種目は、設定・トレ画面の種目リストにも追加されます。</p>`);
 
-  // 選んだ（or 登録した）種目を今日のメニューに足す共通処理
+  // 選んだ（or 登録した）種目をこの日のメニューに足す共通処理
   const addToMenu = async (ex) => {
     const history = await db.byIndex('workouts', 'exerciseId', ex.id);
-    const prop = coach.proposeFor(ex, history);
+    const prop = coach.proposeFor(ex, history, { date: menu.date });
     const uid = Math.max(0, ...menu.items.map(it => it.uid)) + 1;
     menu.items.push({
       uid, kind: 'ex', exId: ex.id, name: ex.name, part: ex.part || 'その他', extra: true,
@@ -277,11 +286,10 @@ async function openAddSheet(menu) {
 // 変更は未実施の後続セットにも引き継がれる。✓のたびに途中保存＋休憩タイマー。
 // 保存形式はトレ画面と同じ workouts（グラフ・PR判定・前回比較に自動で乗る）。
 // ============================================================
-async function openQuickLog(item) {
-  const today = todayStr();
+async function openQuickLog(item, date) {
   const history = await db.byIndex('workouts', 'exerciseId', item.exId);
   const existing = history
-    .filter(w => w.date === today)
+    .filter(w => w.date === date)
     .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0] || null;
 
   // 行の初期状態: 記録済みセット（✓固定）＋提案の残りセット
@@ -344,7 +352,7 @@ async function openQuickLog(item) {
     const saved = pr || (hadPr && sessionBest >= histBest) || false;
     recId = await db.put('workouts', {
       ...(recId != null ? { id: recId } : {}),
-      date: today, exerciseId: item.exId, name: item.name, sets,
+      date, exerciseId: item.exId, name: item.name, sets,
       memo: '', pr: saved, ts: recTs,
     });
     const newPr = pr && !hadPr;
@@ -411,7 +419,7 @@ async function openQuickLog(item) {
   body.querySelector('#ql-full').onclick = async () => {
     const rec = recId != null ? await db.get('workouts', recId) : null;
     closeSheet();
-    openSetSheet(today, { id: item.exId, name: item.name }, rec,
+    openSetSheet(date, { id: item.exId, name: item.name }, rec,
       rec ? null : item.sets.map(s => ({ weight: s.weight || '', reps: s.reps, rpe: '' })));
   };
 }

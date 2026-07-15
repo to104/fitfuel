@@ -17,7 +17,7 @@ export async function render(root) {
     db.getSetting('profile', {}),
     db.latestWeightUpTo(date),
     db.getSetting('accentBright', 100),   // オレンジの明るさ（%）
-    coach.getMenu(),                      // AIトレーナーの今日のメニュー（今日以外はnull）
+    coach.getMenu(date),                  // AIトレーナーのこの日のメニュー（未作成はnull）
   ]);
   rows.sort((a, b) => (a.ts || 0) - (b.ts || 0));
   // 消費カロリー推定に使う体重（その日以前の記録→なければプロフィール値）
@@ -33,18 +33,22 @@ export async function render(root) {
       </div>
     </header>
 
-    ${date === todayStr() ? `
+    ${date >= todayStr() ? `
     <button class="card coach-card" id="go-coach">
       <span class="coach-card-ico" aria-hidden="true">🤖</span>
       <span class="coach-card-main">
         <b>AIトレーナー</b>
-        <span class="coach-card-sub">${menu
-          ? `今日のメニュー進行中（${menu.items.filter(it => it.kind === 'ex' ? rows.some(w => w.exerciseId === it.exId) : it.done).length} / ${menu.items.length}）`
-          : '記録をもとに今日のメニューを提案します'}</span>
+        <span class="coach-card-sub">${date === todayStr()
+          ? (menu
+            ? `今日のメニュー進行中（${menu.items.filter(it => it.kind === 'ex' ? rows.some(w => w.exerciseId === it.exId) : it.done).length} / ${menu.items.length}）`
+            : '記録をもとに今日のメニューを提案します')
+          : (menu
+            ? `予定メニュー作成済み（${menu.items.filter(it => it.kind === 'ex').length}種目・約${coach.estimateMinutes(menu.items)}分）`
+            : 'この日のメニューを前もって提案します')}</span>
       </span>
       <span class="chev">›</span>
-    </button>
-    <div id="timer-mount"></div>` : ''}
+    </button>` : ''}
+    ${date === todayStr() ? '<div id="timer-mount"></div>' : ''}
 
     ${burn ? `
     <div class="card burn-card">

@@ -4,7 +4,7 @@
 // APIキー不要・オフライン動作。Claude API連携（方式B）はPhase2でここに追加する。
 // ============================================================
 import * as db from './db.js';
-import { todayStr, addDays } from './ui.js';
+import { todayStr, addDays, dateLabel } from './ui.js';
 
 // ---- 分割パターン（プッシュ・プル・レッグ） ----
 // mains: その日のメイン部位（固定）／extras: ユーザーが設定で足す追い込み部位
@@ -26,31 +26,62 @@ export async function setSplit(patch) {
   await db.setSetting('coachSplit', { ...(await getSplit()), ...patch });
 }
 
-// ---- 今日のメニューの保存・読み出し（settingsストアに保存＝同期・バックアップ対象） ----
-export async function getMenu() {
+// ---- メニューの保存・読み出し（settingsストアに保存＝同期・バックアップ対象） ----
+// 保存形式は「日付ごとの一覧」 { '2026-07-16': {date,dayKey,items,...}, ... }
+// ＝明日以降のぶんも前もって作成・保持できる。過ぎた日付は読み書き時に自動削除。
+// v1.17以前は今日の1件だけを直接保存していたため、旧形式（.itemsを持つ）は読み替える
+async function loadMenus() {
   const m = await db.getSetting('coachMenu', null);
-  if (!m || m.date !== todayStr()) return null;   // 日付が変わった古いメニューは無視
-  // 設定→トレーニング種目との連動:
-  // メニューは種目名・部位のコピーを持つため、設定側の改名・部位変更を毎回反映し、
-  // 削除された種目は今日のメニューからも外す（記録済みのworkoutsには影響しない）
-  const byId = new Map((await db.all('exercises')).map(x => [x.id, x]));
-  let changed = false;
-  m.items = m.items.filter(it => {
-    if (it.kind !== 'ex') return true;
-    const ex = byId.get(it.exId);
-    if (!ex) { changed = true; return false; }
-    if (ex.name !== it.name || (ex.part || 'その他') !== it.part) {
-      it.name = ex.name;
-      it.part = ex.part || 'その他';
-      changed = true;
-    }
-    return true;
-  });
-  if (changed) await saveMenu(m);
+  if (!m) return {};
+  if (Array.isArray(m.items)) return m.date ? { [m.date]: m } : {};   // 旧形式
   return m;
 }
-export async function saveMenu(menu) { await db.setSetting('coachMenu', menu); }
-export async function clearMenu() { await db.setSetting('coachMenu', null); }
+// 昨日以前のメニューを取り除く（戻り値: 取り除いたかどうか）
+function pruneOld(menus) {
+  const t = todayStr();
+  let changed = false;
+  for (const d of Object.keys(menus)) {
+    if (d < t) { delete menus[d]; changed = true; }
+  }
+  return changed;
+}
+
+export async function getMenu(date = todayStr()) {
+  const menus = await loadMenus();
+  let changed = pruneOld(menus);
+  const m = menus[date] || null;
+  if (m) {
+    // 設定→トレーニング種目との連動:
+    // メニューは種目名・部位のコピーを持つため、設定側の改名・部位変更を毎回反映し、
+    // 削除された種目はメニューからも外す（記録済みのworkoutsには影響しない）
+    const byId = new Map((await db.all('exercises')).map(x => [x.id, x]));
+    m.items = m.items.filter(it => {
+      if (it.kind !== 'ex') return true;
+      const ex = byId.get(it.exId);
+      if (!ex) { changed = true; return false; }
+      if (ex.name !== it.name || (ex.part || 'その他') !== it.part) {
+        it.name = ex.name;
+        it.part = ex.part || 'その他';
+        changed = true;
+      }
+      return true;
+    });
+  }
+  if (changed) await db.setSetting('coachMenu', menus);
+  return m;
+}
+export async function saveMenu(menu) {
+  const menus = await loadMenus();
+  pruneOld(menus);
+  menus[menu.date] = menu;
+  await db.setSetting('coachMenu', menus);
+}
+export async function clearMenu(date = todayStr()) {
+  const menus = await loadMenus();
+  pruneOld(menus);
+  delete menus[date];
+  await db.setSetting('coachMenu', menus);
+}
 
 // ============================================================
 // 記録の集計ヘルパー
@@ -84,22 +115,23 @@ const r25 = (w) => Math.round(w / 2.5) * 2.5;
 
 // ============================================================
 // 次にやるべき日タイプの提案（ローテーション判定）
-// 直近の記録日を分割タイプに分類し、その次のタイプを返す
+// 対象日より前の記録日を分割タイプに分類し、その次のタイプを返す。
+// 明日以降の分を前もって作るときは、まだ記録のない「作成済みメニュー（予定）」も
+// ローテーションに数える（例: 今日プッシュ予定→明日はプルを提案）
 // ============================================================
-export async function suggestDay() {
-  const today = todayStr();
-  const cutoff = addDays(today, -21);
+export async function suggestDay(date = todayStr()) {
+  const cutoff = addDays(date, -21);
   const [workouts, exercises] = await Promise.all([db.all('workouts'), db.all('exercises')]);
   const partOf = partMap(exercises);
 
   // 日付ごとに「どのタイプの日だったか」をメイン部位のセット数で採点して分類
   const byDate = {};
   for (const w of workouts) {
-    if (w.date < cutoff || w.date >= today) continue;
+    if (w.date < cutoff || w.date >= date) continue;
     (byDate[w.date] ??= []).push(w);
   }
   const dates = Object.keys(byDate).sort();
-  let lastKey = null, lastDate = null;
+  let lastKey = null, lastDate = null, lastIsPlan = false;
   for (const d of dates) {
     let best = null, bestScore = 0;
     for (const t of DAY_TYPES) {
@@ -109,12 +141,23 @@ export async function suggestDay() {
     }
     if (best) { lastKey = best; lastDate = d; }
   }
+  // 記録より新しい「作成済みメニュー（予定）」があればそちらを直近扱いにする
+  const menus = await loadMenus();
+  let planned = null;
+  for (const d of Object.keys(menus)) {
+    if (d >= date || d < cutoff || (lastDate && d <= lastDate)) continue;
+    if (!planned || d > planned) planned = d;
+  }
+  if (planned && menus[planned].dayKey) {
+    lastKey = menus[planned].dayKey; lastDate = planned; lastIsPlan = true;
+  }
+
   if (!lastKey) return { key: 'push', reason: '直近3週間に記録がないため、最初のプッシュから始めます。' };
-  const i = DAY_TYPES.findIndex(t => t.key === lastKey);
+  const i = Math.max(0, DAY_TYPES.findIndex(t => t.key === lastKey));
   const next = DAY_TYPES[(i + 1) % DAY_TYPES.length];
   const lastLabel = DAY_TYPES[i].label;
-  const gap = daysBetween(lastDate, todayStr());
-  return { key: next.key, reason: `前回（${lastDate.slice(5).replace('-', '/')}）が${lastLabel}だったので、次は${next.label}です。${gap >= 4 ? `中${gap - 1}日空いています。` : ''}` };
+  const gap = daysBetween(lastDate, date);
+  return { key: next.key, reason: `前回${lastIsPlan ? 'の予定' : ''}（${lastDate.slice(5).replace('-', '/')}）が${lastLabel}${lastIsPlan ? 'なので' : 'だったので'}、次は${next.label}です。${gap >= 4 ? `中${gap - 1}日空いています。` : ''}` };
 }
 
 // ============================================================
@@ -124,10 +167,9 @@ export async function suggestDay() {
 //  ・自重種目は回数+1
 //  ・light=true（回復が浅い部位）はセットを減らして重量も据え置き
 // ============================================================
-export function proposeFor(ex, history, { light = false } = {}) {
-  const today = todayStr();
+export function proposeFor(ex, history, { light = false, date = todayStr() } = {}) {
   const prev = history
-    .filter(w => w.date < today && w.sets?.length)
+    .filter(w => w.date < date && w.sets?.length)
     .sort((a, b) => b.date.localeCompare(a.date) || (b.ts || 0) - (a.ts || 0))[0];
 
   if (!prev) {
@@ -182,9 +224,8 @@ export function estimateMinutes(items) {
 // ============================================================
 // メニュー生成本体
 // ============================================================
-export async function generateMenu({ dayKey, time }) {
-  const today = todayStr();
-  const cutoff = addDays(today, -60);
+export async function generateMenu({ dayKey, time, date = todayStr() }) {
+  const cutoff = addDays(date, -60);
   const [workouts, exercises, split, carry] = await Promise.all([
     db.all('workouts'), db.all('exercises'), getSplit(), db.getSetting('coachCarry', []),
   ]);
@@ -192,14 +233,14 @@ export async function generateMenu({ dayKey, time }) {
   const day = DAY_TYPES.find(t => t.key === dayKey) || DAY_TYPES[0];
   const extras = (split.extras[day.key] || []).filter(p => !day.mains.includes(p));
 
-  // ---- 部位ごとの回復状態（中1日以下なら軽め扱い） ----
-  const lastPart = lastByPart(workouts, partOf, today);
-  const isLight = (p) => lastPart[p] != null && daysBetween(lastPart[p], today) <= 2;
+  // ---- 部位ごとの回復状態（対象日の時点で中1日以下なら軽め扱い） ----
+  const lastPart = lastByPart(workouts, partOf, date);
+  const isLight = (p) => lastPart[p] != null && daysBetween(lastPart[p], date) <= 2;
 
   // ---- 種目ランキング（直近60日の使用回数→最終実施日の順。持ち越し種目は最優先） ----
   const usage = new Map(), lastUse = new Map();
   for (const w of workouts) {
-    if (w.date >= cutoff && w.date < today) usage.set(w.exerciseId, (usage.get(w.exerciseId) || 0) + 1);
+    if (w.date >= cutoff && w.date < date) usage.set(w.exerciseId, (usage.get(w.exerciseId) || 0) + 1);
     if (!lastUse.has(w.exerciseId) || w.date > lastUse.get(w.exerciseId)) lastUse.set(w.exerciseId, w.date);
   }
   const histByEx = new Map();
@@ -240,7 +281,7 @@ export async function generateMenu({ dayKey, time }) {
   let uid = 1;
   const items = [];
   for (const { ex, part, extra } of picked) {
-    const prop = proposeFor(ex, histByEx.get(ex.id) || [], { light: isLight(part) });
+    const prop = proposeFor(ex, histByEx.get(ex.id) || [], { light: isLight(part), date });
     items.push({
       uid: uid++, kind: 'ex', exId: ex.id, name: ex.name, part, extra,
       sets: prop.sets, rest: restFor(prop.sets, extra),
@@ -288,8 +329,9 @@ export async function generateMenu({ dayKey, time }) {
   await db.setSetting('coachCarry', dropped);
 
   // ---- AIコメント ----
+  const dayWord = date === todayStr() ? '今日' : dateLabel(date);
   const lines = [];
-  lines.push(`今日は${day.label}の日${extras.length ? `＋${extras.join('・')}` : ''}です。`);
+  lines.push(`${dayWord}は${day.label}の日${extras.length ? `＋${extras.join('・')}` : ''}です。`);
   const up = list.find(it => it.badge === 'up');
   if (up) lines.push(`${up.name}は${up.note.replace('・', '。')}。`);
   const lightParts = [...new Set(list.filter(it => it.badge === 'light').map(it => it.part))];
@@ -298,7 +340,7 @@ export async function generateMenu({ dayKey, time }) {
   if (carry.length && list.some(it => carry.includes(it.name))) lines.push('前回時間切れだった種目を優先して入れています。');
 
   const menu = {
-    date: today, dayKey: day.key, time,
+    date, dayKey: day.key, time,
     comment: lines.join(''),
     items: [...warmups, ...list],
     dropped,
