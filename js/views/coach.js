@@ -133,8 +133,9 @@ async function renderMenu(root, menu) {
     const rec = recOf(it.exId);
     return `
     <div class="co-item${rec ? ' done' : ''}">
+      <button class="co-check${isFuture && !rec ? ' plan' : ''}" data-chk-ex="${it.uid}"
+        aria-label="${rec ? '記録を取り消す' : '提案どおりに全セット記録する'}">${rec ? '✓' : ''}</button>
       <button class="co-body" data-open="${it.uid}">
-        <span class="co-check${isFuture && !rec ? ' plan' : ''}">${rec ? '✓' : ''}</span>
         <span class="co-main">
           <span class="co-name">${esc(it.name)} ${badge(it.badge)}</span>
           <span class="co-sub">${rec
@@ -188,7 +189,7 @@ async function renderMenu(root, menu) {
     <button class="btn-ghost" id="co-regen">メニューを作り直す（日タイプ・時間の変更）</button>
     <p class="hint">${isFuture
       ? 'この日の予定メニューです。種目をタップすると重量・回数・セット数を調整できます。記録は当日になってからです（メニューを作り直すと調整もリセットされ、直前の記録から計算し直されます）。'
-      : '✎で提案の重量・回数・セット数を調整できます。✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>
+      : '□をタップすると提案どおりに全セットまとめて記録できます（✓をもう一度タップで取り消し）。種目名のタップで1セットずつ記録、✎で提案の重量・回数・セット数を調整できます。✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>
     </div>`;
 
   root.querySelector('#co-back').onclick = () => setTab('train');
@@ -208,6 +209,23 @@ async function renderMenu(root, menu) {
     if (!it) return;
     if (isFuture) { openEditProposal(menu, it); return; }
     openQuickLog(it, date);
+  });
+
+  // □タップ → 提案どおりに全セットを一括記録（✓済みならもう一度タップで取り消し）
+  root.querySelectorAll('[data-chk-ex]').forEach(b => b.onclick = async () => {
+    const it = menu.items.find(x => x.uid === +b.dataset.chkEx);
+    if (!it) return;
+    if (isFuture) { toast('予定メニューのため、チェック（記録）は当日からできます'); return; }
+    const rec = recOf(it.exId);
+    if (rec) {
+      // ✓済み → 誤タップ対応として、この日のこの種目の記録を取り消せるようにする
+      if (!confirm(`「${it.name}」の今日の記録を取り消しますか？\n（過去の日の記録には影響しません）`)) return;
+      for (const w of rows.filter(x => x.exerciseId === it.exId)) await db.del('workouts', w.id);
+      toast(`「${it.name}」の記録を取り消しました`);
+    } else {
+      await recordAllSets(it, date);
+    }
+    refresh();
   });
 
   // ✎ で提案の重量・回数を調整
@@ -233,6 +251,29 @@ async function renderMenu(root, menu) {
     await coach.clearMenu(date);
     refresh();
   };
+}
+
+// ============================================================
+// □タップの一括記録
+// 提案どおりの重量・回数・セット数をそのまま1件の記録として保存する。
+// 保存形式・PR（自己ベスト）判定はクイック記録と同じ＝グラフ・前回比較に自動で乗る。
+// ============================================================
+async function recordAllSets(item, date) {
+  const sets = item.sets
+    .filter(s => (s.reps || 0) > 0)
+    .map(s => ({ weight: s.weight || 0, reps: s.reps, rpe: null }));
+  if (!sets.length) { toast('セットがありません。✎で調整してください'); return; }
+  const history = await db.byIndex('workouts', 'exerciseId', item.exId);
+  const sessionBest = Math.max(...sets.map(s => e1rm(s.weight, s.reps)));
+  const histBest = Math.max(0, ...history.flatMap(w => w.sets.map(s => e1rm(s.weight, s.reps))));
+  const pr = sessionBest > histBest && histBest > 0;
+  await db.put('workouts', {
+    date, exerciseId: item.exId, name: item.name, sets,
+    memo: '', pr, ts: Date.now(),
+  });
+  timer.haptic();
+  if (pr) toast(`🏆 自己ベスト更新！ 推定1RM ${fmt(sessionBest, 1)}kg`, 3500);
+  else toast(`✓ 「${item.name}」を提案どおり記録しました`);
 }
 
 // ============================================================

@@ -677,6 +677,10 @@ input[type="search"] { margin-bottom: 10px; }
 }
 .co-item.done .co-check { background: var(--good); border-color: var(--good); }
 .co-check.plan { border-style: dashed; opacity: .55; }   /* 予定＝当日までチェック不可の見た目 */
+/* 種目行の□は独立ボタン（□タップ＝一括記録、行タップ＝シート）。見た目は26pxのままタップ領域だけ広げる */
+button.co-check { margin-right: 12px; position: relative; }
+button.co-check::after { content: ''; position: absolute; inset: -11px; }
+button.co-check:active { border-color: var(--accent); }
 .co-item.done .co-name { color: var(--sub); }
 .co-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .co-name { font-weight: 600; font-size: 16px; }
