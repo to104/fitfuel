@@ -20,6 +20,12 @@ let onOpenTrain = null;      // ミニバータップ時にトレ画面へ移動
 // 音（Web Audio APIで合成）
 // ============================================================
 let AC = null, COMP = null;
+
+// マナーモード（消音スイッチ）対策：このページの音を「短い通知音」扱いに宣言する。
+// 'transient'は消音スイッチでも鳴り、再生中の音楽を止めずに一時的に小さくするだけ。
+// （iOS 17以降のAudio Session API。未対応の環境では何もしない）
+try { if (navigator.audioSession) navigator.audioSession.type = 'transient'; } catch (e) {}
+
 function ac() {
   if (!AC) {
     AC = new (window.AudioContext || window.webkitAudioContext)();
@@ -30,9 +36,14 @@ function ac() {
   if (AC.state !== 'running') AC.resume().catch(() => {});
   return AC;
 }
-// タイマー復元で自動再開した場合、タップなしでは音が解禁されない（ブラウザの自動再生制限）。
-// そのため画面のどこかに触れた瞬間に音の準備・復帰を行う
-document.addEventListener('pointerdown', () => { if (running || AC) ac(); }, { passive: true });
+// ブラウザの自動再生制限（ユーザー操作の中でしか音を出し始められないルール）対策。
+// 画面のどこかに触れた最初の瞬間に必ず音を解禁しておく。
+// アプリを閉じている間にタイマーが終わっていた場合（pendingFinish）はここで遅れて鳴らす。
+let pendingFinish = false;
+document.addEventListener('pointerdown', () => {
+  ac();
+  if (pendingFinish) { pendingFinish = false; playFinish(); }
+}, { passive: true });
 
 // 単音を鳴らす（周波数, 開始秒, 長さ, 波形, 音量係数, グライド先周波数）
 function tone(freq, start, dur, type = 'sine', vol = 1, glide = null) {
@@ -54,7 +65,13 @@ export const SOUNDS = {
   alarm:  { name: 'アラーム（ビービー）',   play() { for (let i = 0; i < 4; i++) tone(i % 2 ? 700 : 920, i * 0.22, 0.18, 'sawtooth', .55); } },
   melody: { name: 'メロディ（ピロリン）',   play() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.13, 0.3, 'triangle', .9)); } },
 };
-export function playSound(key) { ac(); (SOUNDS[key] || SOUNDS.beep).play(); }
+// 音を鳴らす。音声機能が停止中（バックグラウンド復帰直後など）は復帰を待ってから鳴らす
+export function playSound(key) {
+  const c = ac();
+  const go = () => (SOUNDS[key] || SOUNDS.beep).play();
+  if (c.state === 'running') go();
+  else c.resume().then(go).catch(() => {});
+}
 function playTick() { tone(1000, 0, 0.06, 'sine', .4); }
 
 function playFinish() {
@@ -110,6 +127,7 @@ function tick() {
 
 // 休憩をはじめから開始（セット完了時に呼ぶ）
 export function startRest() {
+  ac();   // 自動開始でも音を解禁（「✓ セット完了」タップの操作中に呼ばれるため有効）
   stopTicking();
   total = prefs.rest; remain = total;
   endAt = Date.now() + remain * 1000;
@@ -173,7 +191,10 @@ export async function initTimer(opts = {}) {
         if (rem > 0) {                             // カウント中に閉じた場合：続きから再開
           remain = rem; endAt = st.endAt;
           startTicking();
-        } else remain = 0;                         // 閉じている間に終了：0:00で停止表示（音は鳴らさない）
+        } else {
+          remain = 0;                              // 閉じている間に終了：0:00で停止表示
+          if (rem > -60) pendingFinish = true;     // 終了から1分以内なら最初のタップ時に遅れて鳴らす
+        }
       } else {
         remain = Math.min(Math.max(0, st.remain ?? total), total);
       }
