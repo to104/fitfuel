@@ -15,7 +15,7 @@ import * as onboarding from './views/onboarding.js';
 import * as coachView from './views/coach.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.20.0';
+export const APP_VER = '1.20.1';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {

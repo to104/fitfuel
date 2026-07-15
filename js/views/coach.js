@@ -134,7 +134,7 @@ async function renderMenu(root, menu) {
     return `
     <div class="co-item${rec ? ' done' : ''}">
       <button class="co-body" data-open="${it.uid}">
-        <span class="co-check">${rec ? '✓' : ''}</span>
+        <span class="co-check${isFuture && !rec ? ' plan' : ''}">${rec ? '✓' : ''}</span>
         <span class="co-main">
           <span class="co-name">${esc(it.name)} ${badge(it.badge)}</span>
           <span class="co-sub">${rec
@@ -299,6 +299,7 @@ async function openAddSheet(menu) {
 // 保存先はメニュー（coachMenu）のみ＝過去の記録には影響しない。
 // ============================================================
 async function openEditProposal(menu, item) {
+  const isFuture = menu.date > todayStr();
   const rows = item.sets.map(s => ({ w: s.weight || 0, r: s.reps || 10 }));
   if (!rows.length) rows.push({ w: 0, r: 10 });
   const edited = rows.map(() => false);
@@ -309,7 +310,7 @@ async function openEditProposal(menu, item) {
     <div id="ep-rows"></div>
     <button class="btn-ghost" id="ep-add">＋ セットを追加</button>
     <button class="btn btn-big" id="ep-save">この内容に変更する</button>
-    <p class="hint">数値をタップすると±で調整できます。変更は後ろのセットにも引き継がれます。<br>ここで変えるのは提案（予定）だけで、過去の記録には影響しません。</p>`);
+    <p class="hint">${isFuture ? '予定メニューのため、チェック（記録）は当日になるとできます。<br>' : ''}数値をタップすると±で調整できます。変更は後ろのセットにも引き継がれます。<br>ここで変えるのは提案（予定）だけで、過去の記録には影響しません。</p>`);
 
   const rowsEl = body.querySelector('#ep-rows');
   const draw = () => {
