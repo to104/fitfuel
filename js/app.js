@@ -15,7 +15,7 @@ import * as onboarding from './views/onboarding.js';
 import * as coachView from './views/coach.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.16.0';
+export const APP_VER = '1.17.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -46,6 +46,23 @@ export function changeDay(n) {
 
 // 左右スワイプで日付を前後させる（ホーム・食事・トレ画面のみ）
 const SWIPE_TABS = ['home', 'meals', 'train'];
+
+// ---- 日付またぎ対応 ----
+// アプリを開きっぱなしにしていても（スマホのPWA・PCの常駐ウィンドウは何日も
+// 生き続ける）、日付が変わったら表示を「今日」に戻す。
+// これでトレ画面のAIトレーナーカードが前日の日付のまま消えず、翌日以降も
+// タップすればその日のメニュー提案を受けられる。
+// 設定・記録タブでは入力中の内容を消さないよう、画面の描き直しはしない
+// （日付はタブを押したときに今日へ戻る）
+const DATE_TABS = [...SWIPE_TABS, 'coach'];
+let lastDay = todayStr();
+function checkDayRollover() {
+  const t = todayStr();
+  if (t === lastDay) return;
+  lastDay = t;
+  state.date = t;
+  if (DATE_TABS.includes(state.tab)) refresh();
+}
 function initSwipeNav() {
   const view = document.getElementById('view');
   let sx = 0, sy = 0, active = false;
@@ -116,7 +133,8 @@ async function init() {
   // 下部タブのイベント
   document.querySelectorAll('.tabbar button').forEach(b => b.onclick = () => {
     // ホーム・食事・トレのタブを押したときは「今日」に戻す
-    if (b.dataset.tab !== state.tab && SWIPE_TABS.includes(b.dataset.tab)) {
+    // （同じタブの再タップでも戻す＝過去の日付を見たまま迷子にならない）
+    if (SWIPE_TABS.includes(b.dataset.tab)) {
       state.date = todayStr();
     }
     setTab(b.dataset.tab);
@@ -124,6 +142,12 @@ async function init() {
 
   // 左右スワイプで日付移動
   initSwipeNav();
+
+  // 日付またぎの監視: アプリに戻ってきたとき＋開きっぱなしでも1分ごとに確認
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkDayRollover();
+  });
+  setInterval(checkDayRollover, 60000);
 
   // 初回はオンボーディング（目標設定）から
   if (!(await db.getSetting('onboarded', false))) {
