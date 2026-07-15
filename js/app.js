@@ -15,7 +15,7 @@ import * as onboarding from './views/onboarding.js';
 import * as coachView from './views/coach.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.18.0';
+export const APP_VER = '1.19.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -45,6 +45,7 @@ export function changeDay(n) {
 }
 
 // 左右スワイプで日付を前後させる（ホーム・食事・トレ画面のみ）
+// ※AIトレーナー画面では右スワイプ＝「トレ画面へ戻る」として使う
 const SWIPE_TABS = ['home', 'meals', 'train'];
 
 // ---- 日付またぎ対応 ----
@@ -68,7 +69,7 @@ function initSwipeNav() {
   let sx = 0, sy = 0, active = false;
   view.addEventListener('touchstart', (e) => {
     active = false;
-    if (!SWIPE_TABS.includes(state.tab)) return;
+    if (!SWIPE_TABS.includes(state.tab) && state.tab !== 'coach') return;
     if (e.touches.length !== 1) return;
     // 初回設定（オンボーディング）中は無効
     if (document.querySelector('.tabbar').style.display === 'none') return;
@@ -85,6 +86,16 @@ function initSwipeNav() {
     const dx = t.clientX - sx, dy = t.clientY - sy;
     // 横に56px以上、かつ縦の1.6倍以上動いたときだけ切り替える（縦スクロールと区別）
     if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    // AIトレーナー画面: 右へスワイプでトレ画面へ戻る（左スワイプは何もしない）
+    if (state.tab === 'coach') {
+      if (dx > 0) {
+        view.classList.remove('slide-next', 'slide-prev');
+        void view.offsetWidth;
+        view.classList.add('slide-prev');
+        setTab('train');
+      }
+      return;
+    }
     changeDay(dx < 0 ? 1 : -1);   // 左へスワイプ=翌日 / 右へスワイプ=前日
   }, { passive: true });
 }

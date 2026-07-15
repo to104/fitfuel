@@ -57,6 +57,7 @@ async function renderSetup(root, date) {
   const times = [...new Set([...coach.TIME_CHOICES, split.baseTime])].sort((a, b) => a - b);
 
   root.innerHTML = `
+    <div class="coach-scr">
     ${headHTML(date)}
     <div class="sec-title">${esc(dayWord(date))}の日タイプ</div>
     <div class="card">
@@ -76,7 +77,8 @@ async function renderSetup(root, date) {
       </div>
     </div>
     <button class="btn btn-big" id="co-gen">この内容でメニューを作成</button>
-    <p class="hint">追い込み部位と基本時間は 設定 →「AIトレーナー（分割パターン）」で変更できます。</p>`;
+    <p class="hint">追い込み部位と基本時間は 設定 →「AIトレーナー（分割パターン）」で変更できます。</p>
+    </div>`;
 
   const update = () => {
     root.querySelectorAll('[data-day]').forEach(b => b.classList.toggle('on', b.dataset.day === dayKey));
@@ -158,6 +160,7 @@ async function renderMenu(root, menu) {
     </div>`;
 
   root.innerHTML = `
+    <div class="coach-scr">
     ${headHTML(date)}
     <div class="co-meta">
       <span class="co-extra-chip">${day.label}の日</span>
@@ -184,7 +187,8 @@ async function renderMenu(root, menu) {
     <button class="btn-ghost" id="co-regen">メニューを作り直す（日タイプ・時間の変更）</button>
     <p class="hint">${isFuture
       ? 'この日の予定メニューです。当日になったらタップで記録できます（重量・回数は当日の直前記録から計算し直されます＝作り直すと最新になります）。'
-      : '✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>`;
+      : '✕で外した種目は今日のメニューから消えるだけで、種目リストや過去の記録には影響しません。記録済みの種目はトレ画面からも編集できます。'}</p>
+    </div>`;
 
   root.querySelector('#co-back').onclick = () => setTab('train');
 
