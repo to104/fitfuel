@@ -197,7 +197,7 @@ export async function openSetSheet(date, ex, existing, proposal = null) {
 
   const body = openSheet(ex.name, `
     <div id="sheet-rest"></div>
-    ${prev ? `<div class="prev-box">前回（${prev.date.slice(5).replace('-', '/')}） ${prev.sets.map(s => `${s.weight > 0 ? fmt(s.weight, 1) : '自重'}×${s.reps}`).join(' / ')}</div>`
+    ${prev ? `<div class="prev-box">前回（${prev.date.slice(5).replace('-', '/')}） ${prev.sets.map(s => `${s.weight > 0 ? fmt(s.weight, 1) : '自重'}×${s.reps}`).join(' / ')}${vol(prev) > 0 ? `<div class="prev-vol">ボリューム 計 <b>${fmt(vol(prev))}</b> kg</div>` : ''}</div>`
            : '<div class="prev-box">前回記録なし — 初挑戦です</div>'}
     <div class="set-head"><span></span><span>重量 kg</span><span>回数</span><span>RPE</span><span></span></div>
     <div id="sets"></div>

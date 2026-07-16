@@ -21,15 +21,29 @@ let onOpenTrain = null;      // ミニバータップ時にトレ画面へ移動
 // ============================================================
 let AC = null, COMP = null;
 
-// マナーモード（消音スイッチ）対策：このページの音を「短い通知音」扱いに宣言する。
-// 'transient'は消音スイッチでも鳴り、再生中の音楽を止めずに一時的に小さくするだけ。
-// （iOS 17以降のAudio Session API。未対応の環境では何もしない）
-// ※iOSは電話・Siri・バックグラウンド移動などのタイミングで音声セッションの設定を
-//   勝手に元へ戻すことがあるため、読み込み時の1回だけでなく音を扱うたびに宣言し直す。
-function declareSession() {
-  try { if (navigator.audioSession) navigator.audioSession.type = 'transient'; } catch (e) {}
+// マナーモード（消音スイッチ）対策（Audio Session API・iOS 17以降。未対応の環境では何もしない）
+// ・普段は 'transient'（再生中の音楽を止めない設定）
+// ・鳴る直前〜直後だけ 'playback'（消音スイッチを無視して必ず鳴る設定。
+//   その十数秒間だけ他アプリの音楽が一時停止する副作用あり）
+//   ※v1.15〜v1.28の「'transient'常時宣言」は実機で消音スイッチに負けることが
+//     判明したため、この2段構えに方式変更（v1.29.0）
+// ・iOSは電話・Siri・バックグラウンド移動などでセッション設定を勝手に戻すことが
+//   あるため、読み込み時の1回だけでなく音を扱うたびに宣言し直す。
+let sessionMode = 'transient';
+let sessionRevert = null;
+function declareSession(mode) {
+  if (mode) sessionMode = mode;
+  try { if (navigator.audioSession) navigator.audioSession.type = sessionMode; } catch (e) {}
 }
 declareSession();
+
+// いまから鳴らす音のために'playback'へ切り替え、ms後に'transient'へ戻す。
+// カウント中は戻さない（残り3秒のカウント音〜終了音を確実に鳴らすため）。
+function audible(ms) {
+  clearTimeout(sessionRevert);
+  declareSession('playback');
+  sessionRevert = setTimeout(() => { if (!running) declareSession('transient'); }, ms);
+}
 
 function ac() {
   declareSession();   // リセットされていてもここで必ず「消音スイッチでも鳴る」宣言に戻す
@@ -73,6 +87,7 @@ export const SOUNDS = {
 };
 // 音を鳴らす。音声機能が停止中（バックグラウンド復帰直後など）は復帰を待ってから鳴らす
 export function playSound(key) {
+  audible(8000);   // マナーモードでも鳴るように（終了音2回分をカバーして戻す）
   const c = ac();
   const go = () => (SOUNDS[key] || SOUNDS.beep).play();
   if (c.state === 'running') go();
@@ -125,6 +140,7 @@ function tick() {
   remain = Math.max(0, Math.round((endAt - Date.now()) / 1000));
   if (remain !== lastSec) {
     lastSec = remain;
+    if (remain > 0 && remain <= 4) audible(12000); // 鳴る直前に消音スイッチ無視モードへ
     if (remain > 0 && remain <= 3) playTick();     // 残り3秒からカウント音
   }
   if (remain <= 0) { stopTicking(); playFinish(); saveState(); }
