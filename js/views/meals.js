@@ -6,6 +6,7 @@
 // micros = ビタミン・ミネラル10種の合計値（手入力・Myフード分。並び順はcalc.jsのMICROSと同じ）
 // ============================================================
 import * as db from '../db.js';
+import * as ai from '../ai.js';
 import { searchFoods, microsOf, microsPer100 } from '../foods.js';
 import { MICROS, microTargets } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, dateLabel } from '../ui.js';
@@ -151,6 +152,7 @@ export async function openAddSheet(slot, date, onSaved) {
   const body = openSheet(`${slotLabel}に追加`, `
     <div class="tabs" id="add-tabs">
       <button class="tab on" data-t="search">検索</button>
+      <button class="tab" data-t="photo">📷写真</button>
       <button class="tab" data-t="myfood">Myフード</button>
       <button class="tab" data-t="hist">履歴</button>
       <button class="tab" data-t="manual">手入力</button>
@@ -162,7 +164,7 @@ export async function openAddSheet(slot, date, onSaved) {
   tabs.onclick = (e) => {
     const t = e.target.closest('.tab'); if (!t) return;
     tabs.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
-    ({ search: renderSearch, myfood: renderMyFood, hist: renderHist, manual: renderManual })[t.dataset.t]();
+    ({ search: renderSearch, photo: renderPhoto, myfood: renderMyFood, hist: renderHist, manual: renderManual })[t.dataset.t]();
   };
 
   // 保存共通処理
@@ -192,6 +194,99 @@ export async function openAddSheet(slot, date, onSaved) {
     };
     q.oninput = run;
     q.focus();
+  }
+
+  // ---- 写真解析タブ（Claude APIで料理と栄養を推定） ----
+  async function renderPhoto() {
+    if (!(await ai.getWorkerUrl())) {
+      pane.innerHTML = `<div class="empty-line">AI連携が未設定です。<br>
+        設定 →「AI連携（Claude）」でWorker URLを登録すると、写真を撮るだけで食事を記録できるようになります。</div>`;
+      return;
+    }
+    pane.innerHTML = `
+      <label class="btn btn-big file-btn ph-pick">📷 写真を選ぶ・撮る<input id="ph-file" type="file" accept="image/*" hidden></label>
+      <div id="ph-body"></div>
+      <p class="hint">食事全体が写るように撮ると精度が上がります。解析結果から不要な品は外せます（分量は追加後にタップで修正できます）。</p>`;
+    const bodyEl = pane.querySelector('#ph-body');
+
+    pane.querySelector('#ph-file').onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      let img;
+      try {
+        img = await ai.resizeImage(file, 1024);   // 送信前に縮小（トークン・通信量の節約）
+      } catch (err) { toast(err.message); return; }
+
+      bodyEl.innerHTML = `
+        <img class="ph-preview" src="${img.dataUrl}" alt="選んだ食事の写真">
+        <label>補足（任意・精度アップ）<input id="ph-hint" type="text" placeholder="例: 鶏むね200g、ご飯は大盛り" autocomplete="off"></label>
+        <button class="btn btn-big" id="ph-go">🤖 AIで解析する</button>
+        <div id="ph-result"></div>`;
+
+      const goBtn = bodyEl.querySelector('#ph-go');
+      goBtn.onclick = async () => {
+        goBtn.disabled = true;
+        goBtn.textContent = '解析中…（10秒ほどかかります）';
+        try {
+          const res = await ai.analyzePhoto(img, bodyEl.querySelector('#ph-hint').value.trim());
+          renderPhotoResult(res);
+        } catch (err) {
+          toast('解析できませんでした: ' + err.message, 3500);
+          goBtn.disabled = false;
+          goBtn.textContent = '🤖 AIで解析する';
+        }
+      };
+
+      // 解析結果: チェックした品だけまとめて記録に追加する
+      function renderPhotoResult(res) {
+        const dishes = (res.dishes || []).filter(d => d && d.name);
+        const box = bodyEl.querySelector('#ph-result');
+        goBtn.hidden = true;
+        if (!dishes.length) {
+          box.innerHTML = `<div class="empty-line">料理を特定できませんでした。${esc(res.note || '')}<br>別の角度から撮り直すか、補足を入れてお試しください。</div>`;
+          goBtn.hidden = false; goBtn.disabled = false; goBtn.textContent = '🤖 もう一度解析する';
+          return;
+        }
+        box.innerHTML = `
+          ${res.note ? `<div class="ph-note">💡 ${esc(res.note)}</div>` : ''}
+          <div class="food-list">
+            ${dishes.map((d, i) => `
+              <label class="ph-dish">
+                <input type="checkbox" data-di="${i}" checked>
+                <span class="ph-dish-main">
+                  <span class="food-name">${esc(d.name)}</span>
+                  <span class="food-sub">約${fmt(d.amount_g)}g ・ ${fmt(d.kcal)}kcal / P${fmt(d.p, 1)} F${fmt(d.f, 1)} C${fmt(d.c, 1)}</span>
+                </span>
+              </label>`).join('')}
+          </div>
+          <button class="btn btn-big" id="ph-add">チェックした品を${esc(slotLabel)}に追加</button>
+          <p class="hint">数値はAIの推定値（概算）です。追加後に品名をタップすると分量・数値を修正できます。</p>`;
+        box.querySelector('#ph-add').onclick = async () => {
+          const chosen = [...box.querySelectorAll('[data-di]')].filter(el => el.checked).map(el => dishes[+el.dataset.di]);
+          if (!chosen.length) { toast('追加する品にチェックを入れてください'); return; }
+          const base = Date.now();
+          let n = 0;
+          for (const d of chosen) {
+            const g = Math.max(0, +d.amount_g || 0) || null;
+            // 分量gがあれば100gあたり値も持たせる（あとから分量を変えたとき再計算できる）
+            const base100 = g ? {
+              kcal: r1((d.kcal || 0) / g * 100), p: r1((d.p || 0) / g * 100),
+              f: r1((d.f || 0) / g * 100), c: r1((d.c || 0) / g * 100), salt: r1((d.salt || 0) / g * 100),
+            } : null;
+            await db.put('meals', {
+              name: d.name, amount: g,
+              kcal: Math.round(d.kcal || 0), p: r1(d.p), f: r1(d.f), c: r1(d.c), salt: r1(d.salt || 0),
+              base100, micros: null,
+              date, slot, ts: base + n++,
+            });
+          }
+          toast(`写真から${n}品を${slotLabel}に追加しました`);
+          onSaved();
+          closeSheet();
+        };
+      }
+    };
   }
 
   // ---- 分量入力（検索・Myフードから選んだあと） ----

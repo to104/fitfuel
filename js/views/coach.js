@@ -5,6 +5,7 @@
 // ============================================================
 import * as db from '../db.js';
 import * as coach from '../coach.js';
+import * as ai from '../ai.js';
 import * as timer from '../timer.js';
 import { e1rm } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, dateLabel } from '../ui.js';
@@ -100,6 +101,7 @@ async function renderSetup(root, date) {
     try {
       await coach.generateMenu({ dayKey, time, date });
       toast(`${dayWord(date)}のメニューを作成しました`);
+      kickAiComment(date);   // AI連携がオンならコメントを裏で取得（待たずに画面は進む）
     } catch (err) {
       console.error(err);
       toast('メニューを作成できませんでした: ' + err.message);
@@ -109,10 +111,48 @@ async function renderSetup(root, date) {
 }
 
 // ============================================================
+// AIコーチコメントの取得（Claude API連携・裏で実行）
+// メニュー自体はルールベースで即時生成済み。ここではコメントだけを
+// Worker経由でSonnet 5に依頼し、届いたらメニューに保存して再描画する。
+// 未設定・オフライン時は何もしない（従来のルールベースコメントのまま）
+// ============================================================
+async function kickAiComment(date) {
+  try {
+    if (!(await ai.aiReady())) return;
+    let menu = await coach.getMenu(date);
+    if (!menu || menu.aiComment?.status === 'loading') return;
+    menu.aiComment = { status: 'loading', ts: Date.now() };
+    await coach.saveMenu(menu);
+    if (state.tab === 'coach' && state.date === date) refresh();
+
+    let result;
+    try {
+      const text = await ai.trainerComment(await coach.buildAiContext(menu));
+      result = { status: 'done', text };
+    } catch (err) {
+      result = { status: 'error', message: err.message };
+    }
+    // 取得中にメニューが作り直された場合は、古いコメントを付けない
+    menu = await coach.getMenu(date);
+    if (!menu || menu.aiComment?.status !== 'loading') return;
+    menu.aiComment = result;
+    await coach.saveMenu(menu);
+    if (state.tab === 'coach' && state.date === date) refresh();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ============================================================
 // メニュー画面（チェックリスト＋編集）
 // ============================================================
 async function renderMenu(root, menu) {
   const date = menu.date;
+  // 取得中にアプリを閉じた等で「分析中」のまま残っていたら、失敗扱いにして再試行できるようにする
+  if (menu.aiComment?.status === 'loading' && Date.now() - (menu.aiComment.ts || 0) > 120_000) {
+    menu.aiComment = { status: 'error', message: '中断されました' };
+    await coach.saveMenu(menu);
+  }
   const isFuture = date > todayStr();   // 明日以降＝予定（閲覧・編集のみ。記録は当日から）
   const rows = await db.byDate('workouts', date);
   // 記録済み判定: 同じ種目の今日の記録があれば「済」扱い（最新の1件を表示に使う）
@@ -169,8 +209,10 @@ async function renderMenu(root, menu) {
       <span class="co-time-chip">目安 約${est}分 / ${menu.time}分</span>
     </div>
     <div class="co-comment">
-      <div class="co-comment-t">AIトレーナーから</div>
-      ${esc(menu.comment)}
+      <div class="co-comment-t">AIトレーナーから${menu.aiComment?.status === 'done' ? '（Claude）' : ''}</div>
+      ${esc(menu.aiComment?.status === 'done' ? menu.aiComment.text : menu.comment)}
+      ${menu.aiComment?.status === 'loading' ? '<div class="co-ai-status">🤖 Claudeが記録を分析中…（届き次第コメントが差し替わります）</div>' : ''}
+      ${menu.aiComment?.status === 'error' ? `<div class="co-ai-status">AIコメントを取得できませんでした（${esc(menu.aiComment.message || '')}）<button class="btn-ghost co-ai-retry" id="co-ai-retry">再試行</button></div>` : ''}
     </div>
 
     ${warmups.length ? `<div class="sec-title">ウォームアップ</div><div class="card co-list">${warmups.map(wuRow).join('')}</div>` : ''}
@@ -193,6 +235,15 @@ async function renderMenu(root, menu) {
     </div>`;
 
   root.querySelector('#co-back').onclick = () => setTab('train');
+
+  // AIコメントの再試行（取得失敗時のみボタンが出る）
+  const aiRetry = root.querySelector('#co-ai-retry');
+  if (aiRetry) aiRetry.onclick = async () => {
+    menu.aiComment = null;
+    await coach.saveMenu(menu);
+    kickAiComment(date);
+    refresh();
+  };
 
   // ウォームアップ: タップでチェック切り替え
   root.querySelectorAll('[data-wu]').forEach(b => b.onclick = async () => {

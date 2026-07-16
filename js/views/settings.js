@@ -5,6 +5,7 @@
 import * as db from '../db.js';
 import * as timer from '../timer.js';
 import * as coach from '../coach.js';
+import * as ai from '../ai.js';
 import { ACTIVITY, GOALS, recommend, MICROS } from '../calc.js';
 import { esc, fmt, openSheet, closeSheet, toast, segmented, segValue, todayStr } from '../ui.js';
 import { refresh, APP_VER } from '../app.js';
@@ -14,13 +15,14 @@ import * as sync from '../sync.js';
 const PARTS = ['胸', '背中', '脚', '肩', '腕', '腹', 'その他'];
 
 export async function render(root) {
-  const [profile, targets, supps, exercises, myFoods, split] = await Promise.all([
+  const [profile, targets, supps, exercises, myFoods, split, aiUrl] = await Promise.all([
     db.getSetting('profile', {}),
     db.getSetting('targets', {}),
     db.all('supplements'),
     db.all('exercises'),
     db.all('customFoods'),
     coach.getSplit(),
+    ai.getWorkerUrl(),
   ]);
   const tp = timer.getPrefs();
 
@@ -131,6 +133,21 @@ export async function render(root) {
       `}
     </div>
 
+    <div class="sec-title">AI連携（Claude）</div>
+    <div class="card">
+      <label>中継サーバー（Cloudflare Worker）のURL
+        <input id="ai-url" type="url" placeholder="https://○○○.workers.dev" value="${esc(aiUrl)}" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="form-row2">
+        <button class="btn" id="ai-save">保存する</button>
+        <button class="btn-ghost" id="ai-test">接続テスト</button>
+      </div>
+      <p class="hint">${aiUrl
+        ? '✅ 設定済み。食事追加の「📷写真」タブと、AIトレーナーの分析コメントでClaudeを使います。'
+        : '設定すると ①食事写真のAI解析 ②AIトレーナーの分析コメント が使えるようになります。'}<br>
+      セットアップ手順はリポジトリの docs/AI連携セットアップ.md を参照。このURLは同期対象なので1台で設定すれば全端末に反映されます。料金は使った分だけの従量課金（未使用月は0円）です。</p>
+    </div>
+
     <div class="sec-title">データ</div>
     <div class="card">
       <button class="btn" id="bk-export">バックアップをエクスポート（JSON）</button>
@@ -170,6 +187,23 @@ export async function render(root) {
     sync.disableSync();
     toast('同期をオフにしました');
     refresh();
+  };
+
+  // ---- AI連携（Claude / Cloudflare Worker） ----
+  root.querySelector('#ai-save').onclick = async () => {
+    await ai.setWorkerUrl(root.querySelector('#ai-url').value);
+    toast((root.querySelector('#ai-url').value.trim()) ? 'AI連携を保存しました' : 'AI連携をオフにしました（URLを空にしました）');
+    refresh();
+  };
+  root.querySelector('#ai-test').onclick = async (e) => {
+    e.target.disabled = true;
+    try {
+      await ai.testConnection(root.querySelector('#ai-url').value);
+      toast('✅ 接続できました。「保存する」で確定してください');
+    } catch (err) {
+      toast('接続テスト失敗: ' + err.message, 3500);
+    }
+    e.target.disabled = false;
   };
 
   // ---- プロフィール・目標 ----

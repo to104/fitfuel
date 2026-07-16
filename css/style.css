@@ -109,6 +109,9 @@ body {
 }
 .card-head b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
 
+/* hidden属性は display指定（input等）より必ず優先させる */
+[hidden] { display: none !important; }
+
 /* ---------- ボタン ---------- */
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
 .btn {
@@ -759,6 +762,26 @@ button.co-check:active { border-color: var(--accent); }
   display: inline-block; width: auto; margin: 0;
   padding: 6px 10px; font-size: 12px; border-radius: 100px;
   color: var(--sub);
+}
+
+/* ---- AI連携（写真解析タブ・AIトレーナーコメント） ---- */
+.ph-pick { display: block; color: #14100A; }   /* .file-btnのオレンジ文字指定を打ち消す（オレンジ背景に沈むため） */
+.ph-preview {
+  display: block; width: 100%; max-height: 260px; object-fit: contain;
+  border-radius: 14px; margin: 12px 0 4px; background: var(--card2);
+}
+.ph-note { font-size: 12px; color: var(--sub); padding: 8px 2px 0; }
+.ph-dish {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 2px; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.ph-dish:last-of-type { border-bottom: none; }
+.ph-dish input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--accent); }
+.ph-dish-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.co-ai-status { font-size: 12px; color: var(--sub); margin-top: 8px; }
+.co-ai-retry {
+  display: inline-block; width: auto; margin: 0 0 0 8px; padding: 4px 10px;
+  font-size: 12px; border-radius: 100px;
 }
 
 /* 動きを抑えたい設定の端末ではアニメーションを止める */

@@ -348,3 +348,75 @@ export async function generateMenu({ dayKey, time, date = todayStr() }) {
   await saveMenu(menu);
   return menu;
 }
+
+// ============================================================
+// AIコーチコメント用の分析データを組み立てる（Claude API連携・Phase2）
+// メニュー生成自体は上のルールベースのまま＝オフラインでも従来どおり動く。
+// ここで作ったテキストをWorker経由でSonnet 5に渡し、コメントだけAI化する。
+// ============================================================
+export async function buildAiContext(menu) {
+  const [profile, targets, weights, workouts, exercises] = await Promise.all([
+    db.getSetting('profile', {}),
+    db.getSetting('targets', {}),
+    db.all('weights'),
+    db.all('workouts'),
+    db.all('exercises'),
+  ]);
+  const partOf = partMap(exercises);
+  const day = DAY_TYPES.find(t => t.key === menu.dayKey) || DAY_TYPES[0];
+  const L = [];
+
+  // プロフィール・目標
+  const GOAL_LABEL = { cut: '減量', keep: '維持', bulk: '増量' };
+  L.push(`# ユーザー`);
+  L.push(`${profile.age ?? '?'}歳${profile.sex === 'f' ? '女性' : '男性'} / 身長${profile.height ?? '?'}cm / 目的: ${GOAL_LABEL[profile.goal] || profile.goal || '維持'}`);
+
+  // 体重の推移（直近と約2週間前の比較）
+  const ws = weights.filter(w => w.weight != null).sort((a, b) => a.date.localeCompare(b.date));
+  if (ws.length) {
+    const now = ws[ws.length - 1];
+    const past = [...ws].reverse().find(w => daysBetween(w.date, now.date) >= 10);
+    L.push(`体重: ${now.weight}kg（${now.date}）${past ? ` / ${past.date}時点 ${past.weight}kg（${(Math.round((now.weight - past.weight) * 10) / 10) >= 0 ? '+' : ''}${Math.round((now.weight - past.weight) * 10) / 10}kg）` : ''}`);
+  }
+
+  // 栄養（昨日の実績と今日ここまで）
+  const sumRows = (rows) => rows.reduce((t, r) => ({
+    kcal: t.kcal + (r.kcal || 0), p: t.p + (r.p || 0), f: t.f + (r.f || 0), c: t.c + (r.c || 0),
+  }), { kcal: 0, p: 0, f: 0, c: 0 });
+  const fmtPfc = (t) => `${Math.round(t.kcal)}kcal P${Math.round(t.p)} F${Math.round(t.f)} C${Math.round(t.c)}`;
+  const [yRows, tRows] = await Promise.all([
+    db.byDate('meals', addDays(menu.date, -1)),
+    db.byDate('meals', menu.date),
+  ]);
+  L.push(`# 栄養`);
+  L.push(`目標: ${targets.kcal ?? '?'}kcal P${targets.p ?? '?'} F${targets.f ?? '?'} C${targets.c ?? '?'}`);
+  L.push(`昨日の実績: ${yRows.length ? fmtPfc(sumRows(yRows)) : '記録なし'}`);
+  L.push(`今日ここまで: ${tRows.length ? fmtPfc(sumRows(tRows)) : '記録なし'}`);
+
+  // 直近21日のトレ記録（日付ごとに種目とトップセット）
+  const cutoff = addDays(menu.date, -21);
+  const recent = workouts.filter(w => w.date >= cutoff && w.date < menu.date && w.sets?.length);
+  const byDate = {};
+  for (const w of recent) (byDate[w.date] ??= []).push(w);
+  L.push(`# 直近3週間のトレ記録`);
+  const dates = Object.keys(byDate).sort();
+  if (!dates.length) L.push('記録なし');
+  for (const d of dates.slice(-12)) {
+    const items = byDate[d].map(w => {
+      const top = w.sets.reduce((a, s) => (s.weight || 0) >= (a.weight || 0) ? s : a, w.sets[0]);
+      return `${w.name}(${partOf(w)}) ${top.weight > 0 ? `${top.weight}kg` : '自重'}×${top.reps}×${w.sets.length}set${w.pr ? '★PR' : ''}`;
+    });
+    L.push(`${d}: ${items.join(', ')}`);
+  }
+
+  // 今日のメニュー案（ルールベース生成の結果）
+  const setsLabel = (sets) => sets.map(s => `${s.weight > 0 ? `${s.weight}kg` : '自重'}×${s.reps}`).join('/');
+  L.push(`# ${menu.date}のメニュー案（${day.label}の日・${menu.time}分）`);
+  for (const it of menu.items) {
+    if (it.kind === 'warmup') { L.push(`- ウォームアップ: ${it.name}`); continue; }
+    L.push(`- ${it.name}（${it.part}）: ${setsLabel(it.sets)} ${it.note ? `/ ${it.note}` : ''}`);
+  }
+  L.push(`# 依頼`);
+  L.push(`このメニューに取り組むユーザーへのコーチコメントをください。`);
+  return L.join('\n');
+}
