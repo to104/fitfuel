@@ -42,7 +42,15 @@ declareSession();
 function audible(ms) {
   clearTimeout(sessionRevert);
   declareSession('playback');
-  sessionRevert = setTimeout(() => { if (!running) declareSession('transient'); }, ms);
+  ac();   // 停止中なら今のうちに音声機能を復帰させておく（鳴る瞬間に間に合わせる）
+  sessionRevert = setTimeout(() => {
+    if (running) return;
+    declareSession('transient');
+    // 一時停止させた音楽を再開させるため、音声セッション（このアプリの音の枠）を解放する。
+    // iOSは割り込んだ側が枠を手放したときに元のアプリへ「再開してよい」通知を出すため、
+    // AudioContextを止めない限り音楽が止まったままになる。次に鳴らすときはac()が自動復帰。
+    try { if (AC && AC.state === 'running') AC.suspend().catch(() => {}); } catch (e) {}
+  }, ms);
 }
 
 function ac() {
