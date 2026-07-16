@@ -24,9 +24,15 @@ let AC = null, COMP = null;
 // マナーモード（消音スイッチ）対策：このページの音を「短い通知音」扱いに宣言する。
 // 'transient'は消音スイッチでも鳴り、再生中の音楽を止めずに一時的に小さくするだけ。
 // （iOS 17以降のAudio Session API。未対応の環境では何もしない）
-try { if (navigator.audioSession) navigator.audioSession.type = 'transient'; } catch (e) {}
+// ※iOSは電話・Siri・バックグラウンド移動などのタイミングで音声セッションの設定を
+//   勝手に元へ戻すことがあるため、読み込み時の1回だけでなく音を扱うたびに宣言し直す。
+function declareSession() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'transient'; } catch (e) {}
+}
+declareSession();
 
 function ac() {
+  declareSession();   // リセットされていてもここで必ず「消音スイッチでも鳴る」宣言に戻す
   if (!AC) {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     COMP = AC.createDynamicsCompressor();   // 音割れ防止（大きい音を自動で抑える）
@@ -204,7 +210,9 @@ export async function initTimer(opts = {}) {
   const bar = document.getElementById('rest-bar');
   if (bar) bar.onclick = () => { if (onOpenTrain) onOpenTrain(); };
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && running) { requestWake(); ac(); }  // 復帰時に音も再開
+    if (document.visibilityState !== 'visible') return;
+    declareSession();                                    // 復帰のたびにマナーモード対策を宣言し直す
+    if (running) { requestWake(); ac(); }                // 復帰時に音も再開
   });
   updateUI();
 }

@@ -153,7 +153,7 @@ const PARTS = ['胸', '背中', '脚', '肩', '腕', '腹', 'その他'];
 async function openExercisePicker(date) {
   const list = await db.all('exercises');
   const body = openSheet('種目を選ぶ', `
-    <div class="food-list">
+    <div class="food-list ex-list">
       ${list.map(x => `<button class="food-row" data-ex="${x.id}">
         <div><div class="food-name">${esc(x.name)}</div><div class="food-sub">${esc(x.part || '')}</div></div>
         <span class="chev">›</span></button>`).join('')}
