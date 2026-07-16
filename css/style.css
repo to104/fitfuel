@@ -791,6 +791,15 @@ button.co-check:active { border-color: var(--accent); }
 .ph-dish:last-of-type { border-bottom: none; }
 .ph-dish input { width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--accent); }
 .ph-dish-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* 🔍公式情報で再確認（v1.25.0）: 比較表示と採用ボタン */
+.ph-verify { font-size: 13.5px; color: var(--sub); }
+.ph-verify:disabled { opacity: .55; cursor: default; }
+.vf-note { font-size: 14px; line-height: 1.6; color: var(--sub); padding: 6px 0 2px; }
+.vf-cmp { font-size: 14px; line-height: 1.7; padding: 4px 0; }
+.vf-official { color: var(--accent); font-weight: 600; }
+.vf-btns { display: flex; gap: 10px; padding: 8px 0 4px; }
+.vf-btns .btn { flex: 1; margin: 0; padding: 10px; font-size: 14.5px; }
+.vf-btns .btn-ghost { flex: 1; margin: 0; padding: 10px; font-size: 14.5px; }
 .co-ai-status { font-size: 12px; color: var(--sub); margin-top: 8px; }
 .co-ai-retry {
   display: inline-block; width: auto; margin: 0 0 0 8px; padding: 4px 10px;

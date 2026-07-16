@@ -65,6 +65,12 @@ export async function analyzePhoto(image, hint = '') {
   return call('/photo', { image: image.data, media_type: image.mediaType, hint }, 60_000);
 }
 
+// ---- 解析結果の1品を公式情報で再確認（Web検索） ----
+// name: 品名 / amountG: 分量g → {found, source, serving, values:{amount_g,kcal,p,f,c,salt,micros}, note}
+export async function verifyFood(name, amountG) {
+  return call('/verify', { name, amount_g: amountG || 0 }, 60_000);
+}
+
 // ---- AIトレーナーのコーチコメント ----
 // summary: coach.jsが組み立てた記録・メニュー・栄養のテキスト → コメント文字列
 export async function trainerComment(summary) {

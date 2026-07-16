@@ -220,7 +220,7 @@ export async function openAddSheet(slot, date, onSaved) {
 
       bodyEl.innerHTML = `
         <img class="ph-preview" src="${img.dataUrl}" alt="選んだ食事の写真">
-        <label>補足（任意・精度アップ）<input id="ph-hint" type="text" placeholder="例: 鶏むね200g、ご飯は大盛り" autocomplete="off"></label>
+        <label>補足（任意・精度アップ。商品名を入れると公式の栄養成分をWeb検索で確認）<input id="ph-hint" type="text" placeholder="例: ザバスのミルクプロテイン、ご飯は大盛り" autocomplete="off"></label>
         <button class="btn btn-big" id="ph-go">🤖 AIで解析する</button>
         <div id="ph-result"></div>`;
 
@@ -258,11 +258,13 @@ export async function openAddSheet(slot, date, onSaved) {
                 <input type="checkbox" data-di="${i}" checked>
                 <span class="ph-dish-main">
                   <span class="food-name">${esc(d.name)}</span>
-                  <span class="food-sub">約${fmt(d.amount_g)}g ・ ${fmt(d.kcal)}kcal / P${fmt(d.p, 1)} F${fmt(d.f, 1)} C${fmt(d.c, 1)}</span>
+                  <span class="food-sub" data-sub="${i}">約${fmt(d.amount_g)}g ・ ${fmt(d.kcal)}kcal / P${fmt(d.p, 1)} F${fmt(d.f, 1)} C${fmt(d.c, 1)}</span>
                   ${mi ? `<button type="button" class="ph-vm" data-vm="${i}">＋ビタミン・ミネラル10種も推定 ▸</button>` : ''}
+                  <button type="button" class="ph-vm ph-verify" data-vf="${i}">🔍 公式情報で再確認</button>
                 </span>
               </label>
-              ${mi ? `<div class="ph-vm-detail" data-vmd="${i}" hidden>${microDetailHtml(mi)}</div>` : ''}`;
+              ${mi ? `<div class="ph-vm-detail" data-vmd="${i}" hidden>${microDetailHtml(mi)}</div>` : ''}
+              <div class="ph-vm-detail ph-vf-detail" data-vfd="${i}" hidden></div>`;
             }).join('')}
           </div>
           <button class="btn btn-big" id="ph-add">チェックした品を${esc(slotLabel)}に追加</button>
@@ -272,6 +274,67 @@ export async function openAddSheet(slot, date, onSaved) {
           const det = box.querySelector(`[data-vmd="${btn.dataset.vm}"]`);
           det.hidden = !det.hidden;
           btn.textContent = `＋ビタミン・ミネラル10種も推定 ${det.hidden ? '▸' : '▾'}`;
+        });
+        // 「🔍公式情報で再確認」: 品名でWeb検索し、公式の栄養成分が見つかれば比較→採用を選べる
+        const pfc = (x) => `${fmt(x.kcal)}kcal / P${fmt(x.p, 1)} F${fmt(x.f, 1)} C${fmt(x.c, 1)} 塩分${fmt(x.salt, 1)}g`;
+        box.querySelectorAll('[data-vf]').forEach(btn => btn.onclick = async () => {
+          const i = +btn.dataset.vf;
+          const d = dishes[i];
+          const det = box.querySelector(`[data-vfd="${i}"]`);
+          const reset = () => { btn.textContent = '🔍 公式情報で再確認'; btn.disabled = false; };
+          btn.disabled = true;
+          btn.textContent = '🔍 公式情報を確認中…（10秒ほど）';
+          let r;
+          try {
+            r = await ai.verifyFood(d.name, d.amount_g);
+          } catch (err) {
+            toast('確認できませんでした: ' + err.message, 3500);
+            reset();
+            return;
+          }
+          det.hidden = false;
+          if (!r.found) {
+            det.innerHTML = `<div class="vf-note">公式の栄養成分情報は見つかりませんでした（推定値のまま）。${esc(r.note || '')}</div>`;
+            reset();
+            return;
+          }
+          const v = r.values;
+          det.innerHTML = `
+            <div class="vf-note">✅ 公式情報が見つかりました${r.source ? `（出典: ${esc(r.source)}）` : ''}</div>
+            <div class="vf-cmp">
+              <div>現在の推定値: 約${fmt(d.amount_g)}g ・ ${pfc(d)}</div>
+              <div class="vf-official">→ 公式値${r.serving ? `（${esc(r.serving)}）` : ''}: ${v.amount_g ? `約${fmt(v.amount_g)}g ・ ` : ''}${pfc(v)}</div>
+            </div>
+            ${r.note ? `<div class="vf-note">💡 ${esc(r.note)}</div>` : ''}
+            <div class="vf-btns">
+              <button type="button" class="btn" data-adopt>公式値を採用</button>
+              <button type="button" class="btn-ghost" data-keep>推定値のまま</button>
+            </div>`;
+          det.querySelector('[data-adopt]').onclick = () => {
+            // この品を公式値で書き換える（追加時のbase100計算もこの値から行われる）
+            const oldG = +d.amount_g || 0;
+            const newG = v.amount_g || oldG;
+            const officialMi = photoMicros(v);
+            if (officialMi) d.micros = officialMi;
+            // 公式にビタミン・ミネラルの記載が無ければ推定を残す（分量が変わるぶんは按分）
+            else if (Array.isArray(d.micros) && oldG && newG !== oldG) d.micros = d.micros.map(x => r2((+x || 0) / oldG * newG));
+            d.amount_g = newG;
+            d.kcal = v.kcal; d.p = v.p; d.f = v.f; d.c = v.c; d.salt = v.salt;
+            // 行の表示も更新
+            box.querySelector(`[data-sub="${i}"]`).textContent = `約${fmt(d.amount_g)}g ・ ${fmt(d.kcal)}kcal / P${fmt(d.p, 1)} F${fmt(d.f, 1)} C${fmt(d.c, 1)}`;
+            const mi2 = photoMicros(d);
+            const vmd = box.querySelector(`[data-vmd="${i}"]`);
+            if (vmd && mi2) vmd.innerHTML = microDetailHtml(mi2);
+            det.innerHTML = `<div class="vf-note">✅ 公式値に更新しました${r.source ? `（出典: ${esc(r.source)}）` : ''}</div>`;
+            btn.textContent = '✓ 公式値を採用済み';
+          };
+          det.querySelector('[data-keep]').onclick = () => {
+            det.hidden = true;
+            det.innerHTML = '';
+            reset();
+          };
+          // 比較を出している間は二重リクエスト防止のため押せないまま（採用/そのままで確定）
+          btn.textContent = '🔍 公式情報で再確認';
         });
         box.querySelector('#ph-add').onclick = async () => {
           const chosen = [...box.querySelectorAll('[data-di]')].filter(el => el.checked).map(el => dishes[+el.dataset.di]);
