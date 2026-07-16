@@ -251,18 +251,28 @@ export async function openAddSheet(slot, date, onSaved) {
         box.innerHTML = `
           ${res.note ? `<div class="ph-note">💡 ${esc(res.note)}</div>` : ''}
           <div class="food-list">
-            ${dishes.map((d, i) => `
+            ${dishes.map((d, i) => {
+              const mi = photoMicros(d);
+              return `
               <label class="ph-dish">
                 <input type="checkbox" data-di="${i}" checked>
                 <span class="ph-dish-main">
                   <span class="food-name">${esc(d.name)}</span>
                   <span class="food-sub">約${fmt(d.amount_g)}g ・ ${fmt(d.kcal)}kcal / P${fmt(d.p, 1)} F${fmt(d.f, 1)} C${fmt(d.c, 1)}</span>
-                  ${photoMicros(d) ? '<span class="food-sub ph-vm">＋ビタミン・ミネラル10種も推定</span>' : ''}
+                  ${mi ? `<button type="button" class="ph-vm" data-vm="${i}">＋ビタミン・ミネラル10種も推定 ▸</button>` : ''}
                 </span>
-              </label>`).join('')}
+              </label>
+              ${mi ? `<div class="ph-vm-detail" data-vmd="${i}" hidden>${microDetailHtml(mi)}</div>` : ''}`;
+            }).join('')}
           </div>
           <button class="btn btn-big" id="ph-add">チェックした品を${esc(slotLabel)}に追加</button>
           <p class="hint ph-hint">数値はAIの推定値（概算）です。追加後に品名をタップすると分量・数値を修正できます。</p>`;
+        // 「＋ビタミン・ミネラル10種も推定」タップで内訳を開閉（label内のbuttonなのでチェックは切り替わらない）
+        box.querySelectorAll('[data-vm]').forEach(btn => btn.onclick = () => {
+          const det = box.querySelector(`[data-vmd="${btn.dataset.vm}"]`);
+          det.hidden = !det.hidden;
+          btn.textContent = `＋ビタミン・ミネラル10種も推定 ${det.hidden ? '▸' : '▾'}`;
+        });
         box.querySelector('#ph-add').onclick = async () => {
           const chosen = [...box.querySelectorAll('[data-di]')].filter(el => el.checked).map(el => dishes[+el.dataset.di]);
           if (!chosen.length) { toast('追加する品にチェックを入れてください'); return; }

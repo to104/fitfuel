@@ -775,7 +775,15 @@ button.co-check:active { border-color: var(--accent); }
 .ph-hint { font-size: 14.5px; line-height: 1.6; }
 .ph-dish .food-name { font-size: 16.5px; }
 .ph-dish .food-sub { font-size: 14.5px; }
-.ph-vm { color: var(--accent); }
+/* タップで内訳を開閉するボタン（label内でもチェックを切り替えないようbutton要素） */
+.ph-vm {
+  background: none; border: none; padding: 0; text-align: left;
+  font-size: 14.5px; color: var(--accent); cursor: pointer;
+}
+/* 開いた内訳（チェックボックスの分だけ字下げして行と揃える） */
+.ph-vm-detail { padding: 0 2px 12px 32px; border-bottom: 1px solid var(--line); }
+.ph-vm-detail:last-child { border-bottom: none; }
+.ph-vm-detail .micro-detail-head { margin-top: 4px; padding-top: 0; border-top: none; }
 .ph-dish {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 2px; border-bottom: 1px solid var(--line); cursor: pointer;
