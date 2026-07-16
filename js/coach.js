@@ -350,11 +350,12 @@ export async function generateMenu({ dayKey, time, date = todayStr() }) {
 }
 
 // ============================================================
-// AIコーチコメント用の分析データを組み立てる（Claude API連携・Phase2）
-// メニュー生成自体は上のルールベースのまま＝オフラインでも従来どおり動く。
-// ここで作ったテキストをWorker経由でSonnet 5に渡し、コメントだけAI化する。
+// AI連携用の分析データを組み立てる（Claude API連携・Phase2）
+// baseContext(): プロフィール・体重・栄養・直近3週間の記録（コメント/チャット共通）
+// buildAiContext(): 上記＋メニュー案＋依頼文（コーチコメント用）
+// buildChatContext(): 上記＋今日のメニュー概要（チャット用）
 // ============================================================
-export async function buildAiContext(menu) {
+async function baseContext(date) {
   const [profile, targets, weights, workouts, exercises] = await Promise.all([
     db.getSetting('profile', {}),
     db.getSetting('targets', {}),
@@ -363,7 +364,6 @@ export async function buildAiContext(menu) {
     db.all('exercises'),
   ]);
   const partOf = partMap(exercises);
-  const day = DAY_TYPES.find(t => t.key === menu.dayKey) || DAY_TYPES[0];
   const L = [];
 
   // プロフィール・目標
@@ -385,8 +385,8 @@ export async function buildAiContext(menu) {
   }), { kcal: 0, p: 0, f: 0, c: 0 });
   const fmtPfc = (t) => `${Math.round(t.kcal)}kcal P${Math.round(t.p)} F${Math.round(t.f)} C${Math.round(t.c)}`;
   const [yRows, tRows] = await Promise.all([
-    db.byDate('meals', addDays(menu.date, -1)),
-    db.byDate('meals', menu.date),
+    db.byDate('meals', addDays(date, -1)),
+    db.byDate('meals', date),
   ]);
   L.push(`# 栄養`);
   L.push(`目標: ${targets.kcal ?? '?'}kcal P${targets.p ?? '?'} F${targets.f ?? '?'} C${targets.c ?? '?'}`);
@@ -394,8 +394,8 @@ export async function buildAiContext(menu) {
   L.push(`今日ここまで: ${tRows.length ? fmtPfc(sumRows(tRows)) : '記録なし'}`);
 
   // 直近21日のトレ記録（日付ごとに種目とトップセット）
-  const cutoff = addDays(menu.date, -21);
-  const recent = workouts.filter(w => w.date >= cutoff && w.date < menu.date && w.sets?.length);
+  const cutoff = addDays(date, -21);
+  const recent = workouts.filter(w => w.date >= cutoff && w.date < date && w.sets?.length);
   const byDate = {};
   for (const w of recent) (byDate[w.date] ??= []).push(w);
   L.push(`# 直近3週間のトレ記録`);
@@ -408,15 +408,40 @@ export async function buildAiContext(menu) {
     });
     L.push(`${d}: ${items.join(', ')}`);
   }
+  return L;
+}
 
-  // 今日のメニュー案（ルールベース生成の結果）
-  const setsLabel = (sets) => sets.map(s => `${s.weight > 0 ? `${s.weight}kg` : '自重'}×${s.reps}`).join('/');
+const setsLabelText = (sets) => sets.map(s => `${s.weight > 0 ? `${s.weight}kg` : '自重'}×${s.reps}`).join('/');
+
+// コーチコメント用（メニュー案＋依頼文つき）
+export async function buildAiContext(menu) {
+  const day = DAY_TYPES.find(t => t.key === menu.dayKey) || DAY_TYPES[0];
+  const L = await baseContext(menu.date);
   L.push(`# ${menu.date}のメニュー案（${day.label}の日・${menu.time}分）`);
   for (const it of menu.items) {
     if (it.kind === 'warmup') { L.push(`- ウォームアップ: ${it.name}`); continue; }
-    L.push(`- ${it.name}（${it.part}）: ${setsLabel(it.sets)} ${it.note ? `/ ${it.note}` : ''}`);
+    L.push(`- ${it.name}（${it.part}）: ${setsLabelText(it.sets)} ${it.note ? `/ ${it.note}` : ''}`);
   }
   L.push(`# 依頼`);
   L.push(`このメニューに取り組むユーザーへのコーチコメントをください。`);
+  return L.join('\n');
+}
+
+// AIチャット用（今日のメニューがあれば概要を添える）
+export async function buildChatContext() {
+  const today = todayStr();
+  const L = [`今日の日付: ${today}`, ...(await baseContext(today))];
+  const menu = await getMenu(today);
+  if (menu) {
+    const day = DAY_TYPES.find(t => t.key === menu.dayKey) || DAY_TYPES[0];
+    L.push(`# 今日のメニュー（AIトレーナー提案・${day.label}の日・${menu.time}分）`);
+    for (const it of menu.items) {
+      if (it.kind === 'warmup') continue;
+      L.push(`- ${it.name}（${it.part}）: ${setsLabelText(it.sets)}`);
+    }
+  } else {
+    L.push(`# 今日のメニュー`);
+    L.push(`未作成（トレ画面のAIトレーナーから作成できる）`);
+  }
   return L.join('\n');
 }

@@ -15,7 +15,7 @@ import * as sync from '../sync.js';
 const PARTS = ['胸', '背中', '脚', '肩', '腕', '腹', 'その他'];
 
 export async function render(root) {
-  const [profile, targets, supps, exercises, myFoods, split, aiUrl] = await Promise.all([
+  const [profile, targets, supps, exercises, myFoods, split, aiUrl, aiNotes] = await Promise.all([
     db.getSetting('profile', {}),
     db.getSetting('targets', {}),
     db.all('supplements'),
@@ -23,6 +23,7 @@ export async function render(root) {
     db.all('customFoods'),
     coach.getSplit(),
     ai.getWorkerUrl(),
+    ai.getNotes(),
   ]);
   const tp = timer.getPrefs();
 
@@ -148,6 +149,15 @@ export async function render(root) {
       セットアップ手順はリポジトリの docs/AI連携セットアップ.md を参照。このURLは同期対象なので1台で設定すれば全端末に反映されます。料金は使った分だけの従量課金（未使用月は0円）です。</p>
     </div>
 
+    <div class="sec-title">AIメモリーノート（チャットの長期記憶）</div>
+    <div class="card">
+      ${aiNotes.map(n => `<div class="manage-row note-row"><span>${esc(n.text)}</span>
+        <span class="manage-btns"><button class="icon-btn" data-edit-note="${esc(n.id)}" aria-label="編集">✎</button><button class="icon-btn" data-del-note="${esc(n.id)}" aria-label="削除">✕</button></span></div>`).join('')
+        || '<div class="empty-line">まだありません。AIチャットで会話すると、覚えておくべきこと（ケガ・目標・生活の制約など）が自動で追加されます</div>'}
+      <button class="btn-ghost" id="note-add">＋ 自分で追加する</button>
+      <p class="hint">AIチャットのたびにこのノートがAIへ渡されるため、会話をリセットしても記憶は引き継がれます。同期対象なのでスマホ⇄PCで共有されます。</p>
+    </div>
+
     <div class="sec-title">データ</div>
     <div class="card">
       <button class="btn" id="bk-export">バックアップをエクスポート（JSON）</button>
@@ -205,6 +215,40 @@ export async function render(root) {
     }
     e.target.disabled = false;
   };
+
+  // ---- AIメモリーノート（チャットの長期記憶） ----
+  const openNoteSheet = (note) => {
+    const body = openSheet(note ? 'メモリーノートを編集' : 'メモリーノートを追加', `
+      <label>覚えておくこと<textarea id="nt-text" rows="3" maxlength="200"
+        placeholder="例: 右肩に古傷があり、オーバーヘッド系は軽めにする">${note ? esc(note.text) : ''}</textarea></label>
+      <button class="btn btn-big" id="nt-save">保存する</button>
+      ${note ? '<button class="btn-ghost" id="nt-del">このノートを削除する</button>' : ''}`);
+    body.querySelector('#nt-save').onclick = async () => {
+      const text = body.querySelector('#nt-text').value.trim();
+      if (!text) { toast('内容を入力してください'); return; }
+      if (note) await ai.updateNote(note.id, text);
+      else await ai.addNote(text, 'user');
+      closeSheet();
+      toast('保存しました');
+      refresh();
+    };
+    const del = body.querySelector('#nt-del');
+    if (del) del.onclick = async () => {
+      if (!confirm('このノートを削除しますか？')) return;
+      await ai.deleteNote(note.id);
+      closeSheet();
+      toast('削除しました');
+      refresh();
+    };
+  };
+  root.querySelector('#note-add').onclick = () => openNoteSheet(null);
+  root.querySelectorAll('[data-edit-note]').forEach(b => b.onclick = () =>
+    openNoteSheet(aiNotes.find(n => n.id === b.dataset.editNote)));
+  root.querySelectorAll('[data-del-note]').forEach(b => b.onclick = async () => {
+    if (!confirm('このノートを削除しますか？\n（以後のAIチャットには渡されなくなります）')) return;
+    await ai.deleteNote(b.dataset.delNote);
+    refresh();
+  });
 
   // ---- プロフィール・目標 ----
   const readProfile = () => ({

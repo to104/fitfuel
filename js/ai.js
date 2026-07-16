@@ -71,6 +71,61 @@ export async function verifyFood(name, amountG) {
   return call('/verify', { name, amount_g: amountG || 0 }, 60_000);
 }
 
+// ---- AIチャット相談 ----
+// messages: [{role:'user'|'assistant', text}]（直近10往復まで）
+// context: 記録データのテキスト / notes: メモリーノートのテキスト / summary: 古い会話の要約
+// → { reply, new_notes: [] }
+export async function chat({ messages, context, notes, summary }) {
+  return call('/chat', { messages, context, notes, summary }, 90_000);
+}
+
+// ---- チャット履歴の要約圧縮（10往復を超えて続けるとき） ----
+// summary: これまでの要約 / messages: 圧縮したい古い会話 → { summary }
+export async function chatSummary(summary, messages) {
+  return call('/chat-summary', { summary, messages }, 60_000);
+}
+
+// ============================================================
+// メモリーノート（チャットの長期記憶）
+// settingsストア 'aiNotes' に保存＝Googleドライブ同期・バックアップの対象。
+// 毎回のチャットでシステムプロンプトに同梱され、会話をリセットしても残る。
+// ============================================================
+export async function getNotes() {
+  const notes = await db.getSetting('aiNotes', []);
+  return Array.isArray(notes) ? notes : [];
+}
+async function saveNotes(notes) {
+  await db.setSetting('aiNotes', notes);
+}
+
+// 追加（同じ内容が既にあればスキップ）。戻り値: 追加したかどうか
+export async function addNote(text, src = 'ai') {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const notes = await getNotes();
+  if (notes.some(n => n.text === t)) return false;
+  notes.push({ id: 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: t, src, ts: Date.now() });
+  await saveNotes(notes);
+  return true;
+}
+
+export async function updateNote(id, text) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  const notes = await getNotes();
+  const n = notes.find(x => x.id === id);
+  if (n) { n.text = t; await saveNotes(notes); }
+}
+
+export async function deleteNote(id) {
+  await saveNotes((await getNotes()).filter(n => n.id !== id));
+}
+
+// チャットのシステムプロンプトに載せる形（箇条書きテキスト）
+export async function notesText() {
+  return (await getNotes()).map(n => `- ${n.text}`).join('\n');
+}
+
 // ---- AIトレーナーのコーチコメント ----
 // summary: coach.jsが組み立てた記録・メニュー・栄養のテキスト → コメント文字列
 export async function trainerComment(summary) {

@@ -126,6 +126,42 @@ const VERIFY_SYSTEM = `あなたは日本の管理栄養士です。指定され
 {"found":true/false,"source":"参照した公式サイト名（未発見なら空文字）","serving":"値の基準（例: 1食(214g)あたり）","values":{"amount_g":数値,"kcal":数値,"p":数値,"f":数値,"c":数値,"salt":数値,"micros":[10要素の数値]},"note":"確認結果のひとこと（日本語）"}
 - found:falseのときvaluesは省略してよい`;
 
+// ---- AIチャット相談（/chat） ----
+// 返信本文と「メモリーノートへの追記」を1回の呼び出しでまとめて返させる
+// （structured outputs = 必ずこの形のJSONで返るため、アプリ側の解析が不要）
+const CHAT_SCHEMA = {
+  type: 'object',
+  properties: {
+    reply: { type: 'string', description: 'ユーザーへの返信本文（日本語）' },
+    new_notes: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'メモリーノートに新しく覚えるべき事実（なければ空配列・最大2件・各60文字以内）',
+    },
+  },
+  required: ['reply', 'new_notes'],
+  additionalProperties: false,
+};
+
+const CHAT_SYSTEM = `あなたは筋トレ・栄養管理アプリ「fitfuel」のAIトレーナーです。パーソナルトレーナー兼栄養コーチとして、ユーザーとチャットで会話します。
+- 日本語で、親しみやすく簡潔に。基本は2〜5文、手順や複数項目の説明は箇条書きも可
+- ユーザーのデータ（記録・目標・メモリーノート）に基づいて具体的に答える。数値に触れられるときは触れる
+- 医学的な診断や治療の助言はしない。痛みやケガの相談には無理をさせず、続く場合は医療機関の受診をすすめる
+- わからないことは正直にわからないと言う
+- アプリの操作方法を聞かれたら、トレ画面のAIトレーナー（メニュー提案）・食事タブ（写真解析あり）・記録タブ・設定を案内できる
+
+返信とは別に、メモリーノート（長期記憶）への追記も判断すること:
+- 今後の提案にずっと影響する事実だけをnew_notesに入れる（例: ケガ・既往歴、長期目標、生活の制約、使える器具・環境、強い好みや苦手）
+- すでにメモリーノートにある内容や、一時的な話題（今日の体調・今日の予定など）は入れない
+- なければ空配列。1回の返信で最大2件、各60文字以内の簡潔な文にする`;
+
+// 会話が10往復を超えたとき、古い部分を要約して圧縮するための指示（/chat-summary）
+const CHAT_SUMMARY_SYSTEM = `トレーナーとユーザーのチャットの古い部分を要約します。この要約は今後の会話の文脈としてAIに渡されます。次を落とさず日本語300字以内でまとめること:
+- ユーザーが相談した内容と、アドバイスの結論・要点
+- 進行中の話題や次回への持ち越し事項
+- 重量・回数・目標などの数値は具体的に残す
+出力は要約本文のみ（前置き・見出しは不要）`;
+
 const TRAINER_SYSTEM = `あなたは筋力トレーニングのパーソナルトレーナーです。ユーザーの記録データと今日のメニュー案を分析し、コーチコメントを日本語で返します。
 - 3〜6文・250文字以内。親しみやすく、でも具体的に
 - 前回の重量・回数、部位のローテーション、栄養（PFC）の達成状況など、データ内の具体的な数値に必ず1つ以上言及する
@@ -292,6 +328,83 @@ async function handleVerify(env, body) {
   };
 }
 
+// ---- チャット用: アプリから届いた会話履歴をAPI形式に整える ----
+// 直近20件（=10往復）までに制限し、連続する同じroleはマージする
+// （返信の取得に失敗した後にもう一度送信すると user が2連続になるため）
+function shapeChatMessages(raw) {
+  const msgs = (Array.isArray(raw) ? raw : [])
+    .slice(-20)
+    .map(m => ({
+      role: m?.role === 'assistant' ? 'assistant' : 'user',
+      content: String(m?.text || '').slice(0, 2000).trim(),
+    }))
+    .filter(m => m.content);
+  const merged = [];
+  for (const m of msgs) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === m.role) last.content += '\n' + m.content;
+    else merged.push(m);
+  }
+  // 先頭はuserでなければならないので、assistantで始まる場合は取り除く
+  while (merged.length && merged[0].role !== 'user') merged.shift();
+  return merged;
+}
+
+// ---- AIチャット相談（Sonnet 5） ----
+async function handleChat(env, body) {
+  const messages = shapeChatMessages(body?.messages);
+  if (!messages.length || messages[messages.length - 1].role !== 'user') {
+    throw new Error('メッセージがありません');
+  }
+  const notes = String(body?.notes || '').slice(0, 4000).trim();
+  const summary = String(body?.summary || '').slice(0, 4000).trim();
+  const context = String(body?.context || '').slice(0, 20_000).trim();
+
+  const system = CHAT_SYSTEM
+    + (notes ? `\n\n# メモリーノート（これまでに覚えたユーザーの事実）\n${notes}` : '')
+    + (summary ? `\n\n# ここまでの会話の要約（古い部分を圧縮したもの）\n${summary}` : '')
+    + (context ? `\n\n# ユーザーの最新データ\n${context}` : '');
+
+  const text = await callClaude(env, {
+    model: MODEL_TRAINER,
+    max_tokens: 4000,                        // 思考（adaptive thinking）ぶんの余裕を含む
+    output_config: {
+      effort: 'medium',                      // コーチコメントと同じコスト・質バランス
+      format: { type: 'json_schema', schema: CHAT_SCHEMA },
+    },
+    system,
+    messages,
+  });
+  const parsed = JSON.parse(text);           // structured outputsによりCHAT_SCHEMA準拠が保証される
+  return {
+    reply: String(parsed.reply || '').trim(),
+    new_notes: (Array.isArray(parsed.new_notes) ? parsed.new_notes : [])
+      .map(s => String(s).trim().slice(0, 100))
+      .filter(Boolean)
+      .slice(0, 2),
+  };
+}
+
+// ---- チャット履歴の要約圧縮（Haiku 4.5・会話が長くなったとき用） ----
+async function handleChatSummary(env, body) {
+  const messages = shapeChatMessages(body?.messages);
+  if (!messages.length) throw new Error('要約する会話がありません');
+  const prev = String(body?.summary || '').slice(0, 4000).trim();
+  const convo = messages
+    .map(m => `${m.role === 'user' ? 'ユーザー' : 'トレーナー'}: ${m.content}`)
+    .join('\n');
+  const text = await callClaude(env, {
+    model: MODEL_PHOTO,                      // 要約は速くて安いHaikuで十分
+    max_tokens: 800,
+    system: CHAT_SUMMARY_SYSTEM,
+    messages: [{
+      role: 'user',
+      content: (prev ? `これまでの要約:\n${prev}\n\n` : '') + `会話:\n${convo}`,
+    }],
+  });
+  return { summary: text.trim().slice(0, 1500) };
+}
+
 // ---- トレーナーコメント（Sonnet 5） ----
 async function handleTrainer(env, body) {
   const summary = String(body?.summary || '').slice(0, 20_000);
@@ -333,6 +446,8 @@ export default {
       if (url.pathname === '/photo') return json(await handlePhoto(env, body), 200, origin);
       if (url.pathname === '/verify') return json(await handleVerify(env, body), 200, origin);
       if (url.pathname === '/trainer') return json(await handleTrainer(env, body), 200, origin);
+      if (url.pathname === '/chat') return json(await handleChat(env, body), 200, origin);
+      if (url.pathname === '/chat-summary') return json(await handleChatSummary(env, body), 200, origin);
       return json({ error: '不明なエンドポイントです' }, 404, origin);
     } catch (err) {
       return json({ error: err.message || String(err) }, 502, origin);

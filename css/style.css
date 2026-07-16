@@ -806,6 +806,75 @@ button.co-check:active { border-color: var(--accent); }
   font-size: 12px; border-radius: 100px;
 }
 
+/* ------------------------------------------------------------
+   AIチャット相談（v1.26.0）
+   ------------------------------------------------------------ */
+/* シート内などで使うtextarea（共通inputと同じ見た目） */
+textarea {
+  display: block; width: 100%;
+  margin-top: 5px; padding: 11px 12px;
+  background: var(--card2); border: 1px solid var(--line); border-radius: 12px;
+  color: var(--text); font: inherit; font-size: 16px; /* 16px未満だとiPhoneで拡大される */
+  line-height: 1.5; resize: none;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+
+/* 画面下部の入力バーに隠れないよう、メッセージ一覧の下に余白を確保 */
+.chat-scr { padding-bottom: 64px; }
+.chat-msgs { display: flex; flex-direction: column; gap: 10px; padding: 2px 0 10px; }
+
+/* 吹き出し */
+.chat-b {
+  max-width: 86%; padding: 10px 14px; border-radius: 18px;
+  font-size: 15px; line-height: 1.65;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.chat-b.user {
+  align-self: flex-end; background: var(--accent); color: #14100A;
+  border-bottom-right-radius: 6px; font-weight: 500;
+}
+.chat-b.ai {
+  align-self: flex-start; background: var(--card);
+  border: 1px solid var(--line); border-bottom-left-radius: 6px;
+}
+.chat-typing { color: var(--sub); animation: chat-pulse 1.2s ease-in-out infinite; }
+@keyframes chat-pulse { 50% { opacity: .45; } }
+
+/* AIが覚えたことの表示（吹き出しの下の小さな行） */
+.chat-note { align-self: flex-start; font-size: 12.5px; color: var(--accent); padding: 0 6px; }
+/* 要約引き継ぎ中の表示 */
+.chat-sysline { text-align: center; font-size: 12px; color: var(--mut); padding: 2px 0 4px; }
+/* 返信の再取得（失敗時のみ表示） */
+.chat-retry { align-self: flex-start; width: auto; padding: 8px 14px; font-size: 14px; }
+
+/* 入力バー（タブバーの上に固定） */
+.chat-bar {
+  position: fixed; left: 0; right: 0; z-index: 40;
+  bottom: calc(67px + env(safe-area-inset-bottom));
+  max-width: 520px; margin: 0 auto;
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 8px 12px;
+  background: var(--bar-bg);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid var(--line);
+}
+.chat-bar textarea {
+  flex: 1; margin: 0; padding: 9px 14px;
+  border-radius: 19px; max-height: 110px;
+}
+.chat-send {
+  flex: none; width: 38px; height: 38px; border-radius: 50%;
+  background: var(--accent); color: #14100A;
+  font-size: 19px; font-weight: 700; line-height: 1;
+}
+.chat-send:disabled { opacity: .4; }
+
+/* AIトレーナー画面のチャット入口 */
+.co-chat { margin-top: 2px; }
+
+/* 設定のメモリーノート行（長文でも折り返す） */
+.note-row > span:first-child { min-width: 0; overflow-wrap: break-word; font-size: 14px; line-height: 1.55; }
+
 /* 動きを抑えたい設定の端末ではアニメーションを止める */
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }

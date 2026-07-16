@@ -78,6 +78,7 @@ async function renderSetup(root, date) {
       </div>
     </div>
     <button class="btn btn-big" id="co-gen">この内容でメニューを作成</button>
+    <button class="btn-ghost co-chat" id="co-chat">💬 AIトレーナーとチャットで相談</button>
     <p class="hint">追い込み部位と基本時間は 設定 →「AIトレーナー（分割パターン）」で変更できます。</p>
     </div>`;
 
@@ -94,6 +95,7 @@ async function renderSetup(root, date) {
   update();
 
   root.querySelector('#co-back').onclick = () => setTab('train');
+  root.querySelector('#co-chat').onclick = () => setTab('chat');
   root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { dayKey = b.dataset.day; update(); });
   root.querySelectorAll('[data-time]').forEach(b => b.onclick = () => { time = +b.dataset.time; update(); });
   root.querySelector('#co-gen').onclick = async (e) => {
@@ -214,6 +216,7 @@ async function renderMenu(root, menu) {
       ${menu.aiComment?.status === 'loading' ? '<div class="co-ai-status">🤖 Claudeが記録を分析中…（届き次第コメントが差し替わります）</div>' : ''}
       ${menu.aiComment?.status === 'error' ? `<div class="co-ai-status">AIコメントを取得できませんでした（${esc(menu.aiComment.message || '')}）<button class="btn-ghost co-ai-retry" id="co-ai-retry">再試行</button></div>` : ''}
     </div>
+    <button class="btn-ghost co-chat" id="co-chat">💬 AIトレーナーとチャットで相談</button>
 
     ${warmups.length ? `<div class="sec-title">ウォームアップ</div><div class="card co-list">${warmups.map(wuRow).join('')}</div>` : ''}
 
@@ -235,6 +238,7 @@ async function renderMenu(root, menu) {
     </div>`;
 
   root.querySelector('#co-back').onclick = () => setTab('train');
+  root.querySelector('#co-chat').onclick = () => setTab('chat');
 
   // AIコメントの再試行（取得失敗時のみボタンが出る）
   const aiRetry = root.querySelector('#co-ai-retry');

@@ -94,6 +94,32 @@ http.createServer(async (req, res) => {
     }));
     return;
   }
+  if (url.pathname === '/chat') {
+    await sleep(1500);
+    let last = '', notes = '';
+    try {
+      const b = JSON.parse(body);
+      last = ((b.messages || []).slice(-1)[0]?.text || '').trim();
+      notes = b.notes || '';
+    } catch { /* 無視 */ }
+    // ケガ・目標などのキーワードを含むとメモリーノート抽出ありのパターンを返す
+    const newNotes = /ケガ|怪我|痛|目標|アレルギ|苦手|できない|夜勤|器具/.test(last)
+      ? [`【モック】${last.slice(0, 40)}`] : [];
+    res.writeHead(200, cors(origin)).end(JSON.stringify({
+      reply: `【モック応答】「${last.slice(0, 30)}」ですね。直近の記録を見るとベンチプレスは60kg×8を安定してこなせているので、次回は+2.5kgに挑戦して大丈夫です。タンパク質は今日あと30gほど不足しているので、トレ後のプロテインを忘れずに。${notes ? '\n（メモリーノート' + notes.split('\n').length + '件を参照）' : ''}`,
+      new_notes: newNotes,
+    }));
+    return;
+  }
+  if (url.pathname === '/chat-summary') {
+    await sleep(1200);
+    let count = 0;
+    try { count = (JSON.parse(body).messages || []).length; } catch { /* 無視 */ }
+    res.writeHead(200, cors(origin)).end(JSON.stringify({
+      summary: `【モック要約】直近の会話${count}件の要約。ユーザーはベンチプレスの伸び悩みを相談し、+2.5kg挑戦とタンパク質摂取の改善（1日130g目標）を助言した。次回はフォーム動画の確認を予定。`,
+    }));
+    return;
+  }
   if (url.pathname === '/trainer') {
     await sleep(1800);
     res.writeHead(200, cors(origin)).end(JSON.stringify({

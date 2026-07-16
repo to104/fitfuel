@@ -13,9 +13,10 @@ import * as log from './views/log.js';
 import * as settings from './views/settings.js';
 import * as onboarding from './views/onboarding.js';
 import * as coachView from './views/coach.js';
+import * as chatView from './views/chat.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.25.0';
+export const APP_VER = '1.26.0';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
@@ -23,8 +24,9 @@ export const state = {
   date: todayStr(),   // 食事・トレ画面が表示している日付
 };
 
-// coach（AIトレーナー）はタブバーに出さない画面。トレ画面のカードから開く
-const VIEWS = { home, meals, train, log, settings, coach: coachView };
+// coach（AIトレーナー）・chat（AIチャット相談）はタブバーに出さない画面。
+// coachはトレ画面のカードから、chatはcoach画面のボタンから開く
+const VIEWS = { home, meals, train, log, settings, coach: coachView, chat: chatView };
 
 // タブを切り替える
 export function setTab(tab) {
@@ -69,7 +71,7 @@ function initSwipeNav() {
   let sx = 0, sy = 0, active = false;
   view.addEventListener('touchstart', (e) => {
     active = false;
-    if (!SWIPE_TABS.includes(state.tab) && state.tab !== 'coach') return;
+    if (!SWIPE_TABS.includes(state.tab) && !['coach', 'chat'].includes(state.tab)) return;
     if (e.touches.length !== 1) return;
     // 初回設定（オンボーディング）中は無効
     if (document.querySelector('.tabbar').style.display === 'none') return;
@@ -86,13 +88,15 @@ function initSwipeNav() {
     const dx = t.clientX - sx, dy = t.clientY - sy;
     // 横に56px以上、かつ縦の1.6倍以上動いたときだけ切り替える（縦スクロールと区別）
     if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
-    // AIトレーナー画面: 右へスワイプでトレ画面へ戻る（左スワイプは何もしない）
-    if (state.tab === 'coach') {
+    // AIトレーナー画面: 右へスワイプでトレ画面へ、AIチャット画面: 右へスワイプでAIトレーナーへ戻る
+    // （左スワイプは何もしない）
+    if (state.tab === 'coach' || state.tab === 'chat') {
       if (dx > 0) {
+        const back = state.tab === 'chat' ? 'coach' : 'train';
         view.classList.remove('slide-next', 'slide-prev');
         void view.offsetWidth;
         view.classList.add('slide-prev');
-        setTab('train');
+        setTab(back);
       }
       return;
     }
@@ -102,12 +106,12 @@ function initSwipeNav() {
 
 // いま開いている画面を描き直す（データ変更後に呼ぶ）
 export async function refresh() {
-  // AIトレーナー画面はトレのタブを点灯したままにする（トレの一部という扱い）
-  const tabOf = state.tab === 'coach' ? 'train' : state.tab;
+  // AIトレーナー・AIチャット画面はトレのタブを点灯したままにする（トレの一部という扱い）
+  const tabOf = ['coach', 'chat'].includes(state.tab) ? 'train' : state.tab;
   document.querySelectorAll('.tabbar button').forEach(b =>
     b.classList.toggle('on', b.dataset.tab === tabOf));
   // トレ系画面だけオレンジの明るさ設定を反映し、他の画面では標準色に戻す
-  await train.applyAccent(state.tab === 'train' || state.tab === 'coach');
+  await train.applyAccent(['train', 'coach', 'chat'].includes(state.tab));
   try {
     await VIEWS[state.tab].render(document.getElementById('view'));
   } catch (err) {
