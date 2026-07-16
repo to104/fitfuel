@@ -206,7 +206,7 @@ export async function openAddSheet(slot, date, onSaved) {
     pane.innerHTML = `
       <label class="btn btn-big file-btn ph-pick">📷 写真を選ぶ・撮る<input id="ph-file" type="file" accept="image/*" hidden></label>
       <div id="ph-body"></div>
-      <p class="hint">食事全体が写るように撮ると精度が上がります。解析結果から不要な品は外せます（分量は追加後にタップで修正できます）。</p>`;
+      <p class="hint ph-hint">食事全体が写るように撮ると精度が上がります。解析結果から不要な品は外せます（分量は追加後にタップで修正できます）。</p>`;
     const bodyEl = pane.querySelector('#ph-body');
 
     pane.querySelector('#ph-file').onchange = async (e) => {
@@ -257,11 +257,12 @@ export async function openAddSheet(slot, date, onSaved) {
                 <span class="ph-dish-main">
                   <span class="food-name">${esc(d.name)}</span>
                   <span class="food-sub">約${fmt(d.amount_g)}g ・ ${fmt(d.kcal)}kcal / P${fmt(d.p, 1)} F${fmt(d.f, 1)} C${fmt(d.c, 1)}</span>
+                  ${photoMicros(d) ? '<span class="food-sub ph-vm">＋ビタミン・ミネラル10種も推定</span>' : ''}
                 </span>
               </label>`).join('')}
           </div>
           <button class="btn btn-big" id="ph-add">チェックした品を${esc(slotLabel)}に追加</button>
-          <p class="hint">数値はAIの推定値（概算）です。追加後に品名をタップすると分量・数値を修正できます。</p>`;
+          <p class="hint ph-hint">数値はAIの推定値（概算）です。追加後に品名をタップすると分量・数値を修正できます。</p>`;
         box.querySelector('#ph-add').onclick = async () => {
           const chosen = [...box.querySelectorAll('[data-di]')].filter(el => el.checked).map(el => dishes[+el.dataset.di]);
           if (!chosen.length) { toast('追加する品にチェックを入れてください'); return; }
@@ -269,15 +270,18 @@ export async function openAddSheet(slot, date, onSaved) {
           let n = 0;
           for (const d of chosen) {
             const g = Math.max(0, +d.amount_g || 0) || null;
+            // ビタミン・ミネラル10種: AIの概算があれば手入力と同じ形式で記録に持たせる（集計はmicrosOfが拾う）
+            const micros = photoMicros(d);
             // 分量gがあれば100gあたり値も持たせる（あとから分量を変えたとき再計算できる）
             const base100 = g ? {
               kcal: r1((d.kcal || 0) / g * 100), p: r1((d.p || 0) / g * 100),
               f: r1((d.f || 0) / g * 100), c: r1((d.c || 0) / g * 100), salt: r1((d.salt || 0) / g * 100),
+              ...(micros ? { v: micros.map(v => r2(v / g * 100)) } : {}),
             } : null;
             await db.put('meals', {
               name: d.name, amount: g,
               kcal: Math.round(d.kcal || 0), p: r1(d.p), f: r1(d.f), c: r1(d.c), salt: r1(d.salt || 0),
-              base100, micros: null,
+              base100, micros,
               date, slot, ts: base + n++,
             });
           }
@@ -589,5 +593,13 @@ function microDetailHtml(vals) {
 
 // 小数1桁に丸める
 function r1(n) { return Math.round((n || 0) * 10) / 10; }
+
+// 写真解析の1品からビタミン・ミネラル10種の配列を取り出す（無い・全て0ならnull）
+// 旧バージョンのWorker（micros未対応）からの応答でも壊れないようガードする
+function photoMicros(d) {
+  if (!Array.isArray(d.micros)) return null;
+  const mi = Array.from({ length: MICROS.length }, (_, i) => Math.max(0, +d.micros[i] || 0));
+  return mi.some(v => v > 0) ? mi.map(r2) : null;
+}
 // 小数2桁に丸める（ビタミンB群などmg単位の小さい値用）
 function r2(n) { return Math.round((n || 0) * 100) / 100; }

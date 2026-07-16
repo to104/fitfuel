@@ -52,9 +52,13 @@ http.createServer(async (req, res) => {
     await sleep(1200);
     res.writeHead(200, cors(origin)).end(JSON.stringify({
       dishes: [
-        { name: 'ご飯（白米）', amount_g: 150, kcal: 234, p: 3.8, f: 0.5, c: 55.7, salt: 0 },
-        { name: '鶏の唐揚げ', amount_g: 90, kcal: 261, p: 19.8, f: 15.5, c: 12, salt: 1 },
-        { name: 'みそ汁', amount_g: 180, kcal: 40, p: 3.1, f: 1.3, c: 5, salt: 1.8 },
+        // micros = [ビタミンD(µg), B1, B2, B6, C, Ca, Mg, Fe, Zn, K]（本番Workerと同じ形式）
+        { name: 'ご飯（白米）', amount_g: 150, kcal: 234, p: 3.8, f: 0.5, c: 55.7, salt: 0,
+          micros: [0, 0.03, 0.02, 0.03, 0, 5, 10, 0.2, 0.9, 44] },
+        { name: '鶏の唐揚げ', amount_g: 90, kcal: 261, p: 19.8, f: 15.5, c: 12, salt: 1,
+          micros: [0.4, 0.09, 0.13, 0.28, 2, 14, 25, 0.7, 1.5, 350] },
+        { name: 'みそ汁', amount_g: 180, kcal: 40, p: 3.1, f: 1.3, c: 5, salt: 1.8,
+          micros: [0, 0.03, 0.04, 0.08, 1, 40, 20, 0.7, 0.3, 250] },
       ],
       note: '【モック応答】揚げ物の衣の量で脂質は±20%程度ぶれます',
     }));

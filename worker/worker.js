@@ -40,8 +40,13 @@ const PHOTO_SCHEMA = {
           f:        { type: 'number', description: '脂質（g）' },
           c:        { type: 'number', description: '炭水化物（g）' },
           salt:     { type: 'number', description: '食塩相当量（g）' },
+          micros:   {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'ビタミン・ミネラル10種の推定量（この品の分量全体に含まれる量）。必ず10要素、順番は [ビタミンD(µg), ビタミンB1(mg), ビタミンB2(mg), ビタミンB6(mg), ビタミンC(mg), カルシウム(mg), マグネシウム(mg), 鉄(mg), 亜鉛(mg), カリウム(mg)]。不明・微量の成分は0',
+          },
         },
-        required: ['name', 'amount_g', 'kcal', 'p', 'f', 'c', 'salt'],
+        required: ['name', 'amount_g', 'kcal', 'p', 'f', 'c', 'salt', 'micros'],
         additionalProperties: false,
       },
     },
@@ -56,7 +61,8 @@ const PHOTO_SYSTEM = `あなたは日本の管理栄養士です。食事の写�
 - 分量は器のサイズや盛り付けから現実的に推定する
 - 判別できない料理は最も可能性の高い解釈で推定し、noteでその旨に触れる
 - 飲み物や小鉢も見落とさない
-- ユーザーから補足があればそれを優先する`;
+- ユーザーから補足があればそれを優先する
+- 各品についてビタミン・ミネラル10種（ビタミンD・B1・B2・B6・C、カルシウム・マグネシウム・鉄・亜鉛・カリウム）も八訂ベースで概算する。パッケージの栄養成分表示に記載があればその値を優先し、判断がつかない成分は0とする`;
 
 const TRAINER_SYSTEM = `あなたは筋力トレーニングのパーソナルトレーナーです。ユーザーの記録データと今日のメニュー案を分析し、コーチコメントを日本語で返します。
 - 3〜6文・250文字以内。親しみやすく、でも具体的に
