@@ -7,9 +7,13 @@
 //   （バックアップJSONに含まれるようにするため）
 // ============================================================
 import * as db from './db.js';
+import { toast } from './ui.js';
 
 const LS_KEY = 'ff_timer';   // カウント状態の保存先（localStorage）
-const DEFAULT_PREFS = { sound: 'beep', vol: 0.7, autoTimer: true, rest: 150 };
+// alarmMode: 'ring'=必ず鳴る（マナーモード無視・鳴る間だけ音楽が一時停止→手動再開）
+//            'music'=音楽優先（音楽は止まらないが、マナーモードONだと鳴らない）
+// ※iOSの消音スイッチ状態はWebから読めないため自動切替は不可＝ユーザーがタイマーカードで切替
+const DEFAULT_PREFS = { sound: 'beep', vol: 0.7, autoTimer: true, rest: 150, alarmMode: 'ring' };
 
 let prefs = { ...DEFAULT_PREFS };
 let total = 150, remain = 150, running = false, endAt = 0;
@@ -39,9 +43,11 @@ declareSession();
 
 // いまから鳴らす音のために'playback'へ切り替え、ms後に'transient'へ戻す。
 // カウント中は戻さない（残り3秒のカウント音〜終了音を確実に鳴らすため）。
+// 音楽優先モード（alarmMode:'music'）のときは'playback'に切り替えず'transient'のまま
+// ＝音楽は一時停止しないが、マナーモードONでは鳴らない（ユーザー了承済みのトレードオフ）。
 function audible(ms) {
   clearTimeout(sessionRevert);
-  declareSession('playback');
+  declareSession(prefs.alarmMode === 'music' ? 'transient' : 'playback');
   ac();   // 停止中なら今のうちに音声機能を復帰させておく（鳴る瞬間に間に合わせる）
   sessionRevert = setTimeout(() => {
     if (running) return;
@@ -276,6 +282,15 @@ function updateUI() {
     cardEl.querySelector('#tc-toggle').textContent = running ? '一時停止' : 'スタート';
     cardEl.querySelectorAll('[data-sec]').forEach(b =>
       b.classList.toggle('t-on', +b.dataset.sec === total));
+    // アラーム方式の切替ボタン（🔔必ず鳴る ⇄ 🎵音楽優先）
+    const modeBtn = cardEl.querySelector('#tc-mode');
+    if (modeBtn) {
+      const music = prefs.alarmMode === 'music';
+      modeBtn.textContent = music ? '🎵 音楽優先' : '🔔 必ず鳴る';
+      cardEl.querySelector('#tc-mode-hint').textContent = music
+        ? '音楽は止まらない／マナーモードでは鳴らない'
+        : 'マナーモードでも鳴る／アラーム時は音楽が一時停止';
+    }
   } else cardEl = null;
   // --- シート内ストリップ ---
   if (stripEl && document.body.contains(stripEl)) {
@@ -315,12 +330,24 @@ export function mountCard(container) {
         <button class="btn" id="tc-toggle"></button>
         <button class="btn-ghost" id="tc-reset">リセット</button>
       </div>
+      <div class="t-mode-row">
+        <button class="chip" id="tc-mode"></button>
+        <div class="t-mode-hint" id="tc-mode-hint"></div>
+      </div>
     </div>`;
   cardEl = container;
   container.querySelectorAll('[data-sec]').forEach(b => b.onclick = () => setTo(+b.dataset.sec));
   container.querySelectorAll('[data-adj]').forEach(b => b.onclick = () => adjust(+b.dataset.adj));
   container.querySelector('#tc-toggle').onclick = toggle;
   container.querySelector('#tc-reset').onclick = reset;
+  container.querySelector('#tc-mode').onclick = () => {
+    const next = prefs.alarmMode === 'music' ? 'ring' : 'music';
+    setPrefs({ alarmMode: next });
+    declareSession('transient');   // 切替時点の宣言も揃えておく（次のaudible()でモードに応じて再宣言される）
+    toast(next === 'music'
+      ? '🎵 音楽優先: 音楽は止まりません（マナーモードでは鳴りません）'
+      : '🔔 必ず鳴る: マナーモードでも鳴ります（アラーム時は音楽が一時停止）');
+  };
   updateUI();
 }
 

@@ -572,6 +572,10 @@ input[type="search"] { margin-bottom: 10px; }
 .t-adjust .chip { text-align: center; padding: 10px; border-radius: 12px; }
 .t-main { width: 100%; margin-top: 10px; align-items: center; }
 .t-main .btn-ghost { padding: 11px; }
+/* アラーム方式の切替（🔔必ず鳴る ⇄ 🎵音楽優先） */
+.t-mode-row { width: 100%; margin-top: 12px; text-align: center; }
+.t-mode-row .chip { padding: 8px 14px; font-size: 13.5px; }
+.t-mode-hint { font-size: 12px; color: var(--sub); margin-top: 5px; }
 
 /* シート内の休憩ストリップ */
 .rest-strip {
