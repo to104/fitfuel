@@ -621,7 +621,7 @@ input[type="search"] { margin-bottom: 10px; }
   font-size: 14px; font-weight: 700; color: var(--sub); margin: 10px 0 2px; font-variant-numeric: tabular-nums;
 }
 .tr-day-head:first-of-type { margin-top: 0; }
-.tr-day-vol { font-size: 13.5px; font-weight: 700; color: var(--p); }
+.tr-day-vol { font-size: 13.5px; font-weight: 700; color: var(--text); }
 .tr-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
 .tr-row:last-child { border-bottom: none; }
 .tr-name { font-weight: 600; flex: none; }
