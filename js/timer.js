@@ -46,11 +46,18 @@ function audible(ms) {
   sessionRevert = setTimeout(() => {
     if (running) return;
     declareSession('transient');
-    // 一時停止させた音楽を再開させるため、音声セッション（このアプリの音の枠）を解放する。
-    // iOSは割り込んだ側が枠を手放したときに元のアプリへ「再開してよい」通知を出すため、
-    // AudioContextを止めない限り音楽が止まったままになる。次に鳴らすときはac()が自動復帰。
-    try { if (AC && AC.state === 'running') AC.suspend().catch(() => {}); } catch (e) {}
+    releaseAudio();
   }, ms);
+}
+
+// 一時停止させた音楽を再開させるため、音声セッション（このアプリの音の枠）を完全に手放す。
+// iOSは割り込んだ側が枠を手放したときに元のアプリへ「再開してよい」通知を出す。
+// suspend()（一時停止）では手放した扱いにならず音楽が止まったままだった（v1.29.1の実機報告）
+// ため、close()で破棄する。次に必要なとき（✓セット完了・スタート等のタップ内のac()）に作り直す。
+function releaseAudio() {
+  const old = AC;
+  AC = null; COMP = null;
+  try { if (old) old.close().catch(() => {}); } catch (e) {}
 }
 
 function ac() {
@@ -65,12 +72,14 @@ function ac() {
   return AC;
 }
 // ブラウザの自動再生制限（ユーザー操作の中でしか音を出し始められないルール）対策。
-// 画面のどこかに触れた最初の瞬間に必ず音を解禁しておく。
 // アプリを閉じている間にタイマーが終わっていた場合（pendingFinish）はここで遅れて鳴らす。
+// カウント中は復元直後（タップなしで再開したケース）に備え、タップのついでに音を解禁する。
+// ※カウント中以外は何もしない。以前は毎タップac()していたが、それだと解放（releaseAudio）
+//   直後のタップで音声セッションを取り直してしまい、音楽の自動再開を妨げるため。
 let pendingFinish = false;
 document.addEventListener('pointerdown', () => {
-  ac();
-  if (pendingFinish) { pendingFinish = false; playFinish(); }
+  if (pendingFinish) { pendingFinish = false; ac(); playFinish(); return; }
+  if (running) ac();
 }, { passive: true });
 
 // 単音を鳴らす（周波数, 開始秒, 長さ, 波形, 音量係数, グライド先周波数）
@@ -95,7 +104,7 @@ export const SOUNDS = {
 };
 // 音を鳴らす。音声機能が停止中（バックグラウンド復帰直後など）は復帰を待ってから鳴らす
 export function playSound(key) {
-  audible(8000);   // マナーモードでも鳴るように（終了音2回分をカバーして戻す）
+  audible(6000);   // マナーモードでも鳴るように（終了音2回分をカバーしたら早めに解放して音楽を戻す）
   const c = ac();
   const go = () => (SOUNDS[key] || SOUNDS.beep).play();
   if (c.state === 'running') go();

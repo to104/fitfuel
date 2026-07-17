@@ -16,7 +16,7 @@ import * as coachView from './views/coach.js';
 import * as chatView from './views/chat.js';
 import { initSync } from './sync.js';
 
-export const APP_VER = '1.29.1';
+export const APP_VER = '1.29.2';
 
 // アプリ全体で共有する状態（いま開いているタブ・日付など）
 export const state = {
