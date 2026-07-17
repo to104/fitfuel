@@ -616,12 +616,16 @@ input[type="search"] { margin-bottom: 10px; }
 }
 
 /* 記録→トレ: 最近の記録リスト */
-.tr-day-head { font-size: 12px; font-weight: 700; color: var(--sub); margin: 10px 0 2px; font-variant-numeric: tabular-nums; }
+.tr-day-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  font-size: 14px; font-weight: 700; color: var(--sub); margin: 10px 0 2px; font-variant-numeric: tabular-nums;
+}
 .tr-day-head:first-of-type { margin-top: 0; }
-.tr-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.tr-day-vol { font-size: 13.5px; font-weight: 700; color: var(--p); }
+.tr-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
 .tr-row:last-child { border-bottom: none; }
 .tr-name { font-weight: 600; flex: none; }
-.tr-sets { color: var(--sub); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.tr-sets { color: var(--sub); font-size: 14.5px; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ============================================================
    AIトレーナー（coach）

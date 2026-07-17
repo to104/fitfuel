@@ -78,7 +78,10 @@ async function renderTrain(pane) {
     <div class="card">
       <div class="card-head"><span>最近の記録</span></div>
       ${recent.map(d => `
-        <div class="tr-day-head">${+d.slice(5, 7)}/${+d.slice(8)}（${weekdayOf(d)}）</div>
+        <div class="tr-day-head">
+          <span>${+d.slice(5, 7)}/${+d.slice(8)}（${weekdayOf(d)}）</span>
+          <span class="tr-day-vol">ボリューム ${fmt(Math.round(byDate[d].reduce((a, w) => a + w.sets.reduce((x, s) => x + (s.weight || 0) * (s.reps || 0), 0), 0)))} kg</span>
+        </div>
         ${byDate[d].map(w => `
           <div class="tr-row">
             <span class="tr-name">${esc(w.name)}${w.pr ? ' 🏆' : ''}</span>
