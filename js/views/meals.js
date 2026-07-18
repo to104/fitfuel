@@ -558,6 +558,7 @@ function openEditSheet(row, onSaved) {
         ${MICROS.map((m, i) => `<label>${m.label} <span class="unit">${m.unit}</span><input data-mi="${i}" type="number" inputmode="decimal"></label>`).join('')}
       </div>
     </details>
+    <button class="btn-ghost" id="e-myfood">📌 Myフードに登録</button>
     <button class="btn btn-big" id="e-save">保存する</button>
     <button class="btn-danger" id="e-del">この記録を削除</button>`);
 
@@ -600,6 +601,43 @@ function openEditSheet(row, onSaved) {
     fillMicroInputs(1);
     microInputs.forEach(el => el.oninput = () => { microDirty = true; });
   }
+
+  // Myフード登録: この記録を100gあたりに換算してcustomFoodsへ保存（次回から検索・Myフードタブで呼び出せる）
+  body.querySelector('#e-myfood').onclick = async () => {
+    const btn = body.querySelector('#e-myfood');
+    const g = canScale ? Math.max(0, +gEl.value || 0) : (+row.amount || 0);
+    if (!g) { toast('Myフード登録には分量gが必要です（100gあたりに換算するため）'); return; }
+    let b100;
+    if (canScale) {
+      // base100がある記録: すでに100gあたりの値を持っているのでそのまま使う
+      // （ビタミン・ミネラルを手入力していればmv100に100gあたり基準で反映済み）
+      const b = row.base100;
+      const v = mv100 && mv100.some(x => x > 0) ? mv100.map(r2) : null;
+      b100 = { kcal: r1(b.kcal), p: r1(b.p), f: r1(b.f), c: r1(b.c), salt: r1(b.salt || 0), ...(v ? { v } : {}) };
+    } else {
+      // base100が無い記録: いまの入力値を分量gで100gあたりに換算する
+      const k = +body.querySelector('#e-kcal').value || 0;
+      const p = +body.querySelector('#e-p').value || 0;
+      const f = +body.querySelector('#e-f').value || 0;
+      const c = +body.querySelector('#e-c').value || 0;
+      const mi = microInputs.map(el => +el.value || 0);
+      const v = mi.some(x => x > 0) ? mi.map(x => r2(x / g * 100)) : null;
+      b100 = {
+        kcal: r1(k / g * 100), p: r1(p / g * 100), f: r1(f / g * 100), c: r1(c / g * 100),
+        salt: r1((row.salt || 0) / g * 100), ...(v ? { v } : {}),
+      };
+    }
+    // 同名のMyフードがあれば上書き確認（idを引き継いで更新）
+    const exist = (await db.all('customFoods')).find(x => x.name === row.name);
+    if (exist && !confirm(`Myフード「${row.name}」は登録済みです。今回の内容で上書きしますか？`)) return;
+    await db.put('customFoods', {
+      ...(exist ? { id: exist.id, kana: exist.kana || '' } : { kana: '' }),
+      name: row.name, ...b100, u: ['1食', g],
+    });
+    toast(`Myフード「${row.name}」を${exist ? '更新' : '登録'}しました`);
+    btn.textContent = '✓ Myフードに登録済み';
+    btn.disabled = true;
+  };
 
   body.querySelector('#e-save').onclick = async () => {
     let upd;
