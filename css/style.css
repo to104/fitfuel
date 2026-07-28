@@ -20,6 +20,17 @@
   --c: #3D82D9;             /* 炭水化物（検証済み） */
   --good: #30D158;
   --bad: #FF453A;
+  /* 部位別ボリューム用の10色（隣り合う色が見分けられるよう配置。CVD配慮） */
+  --m-chest: #FF8A5C;      /* 胸 */
+  --m-back: #4FA3E3;       /* 背中 */
+  --m-shoulders: #F2C94C;  /* 肩 */
+  --m-biceps: #35C08A;     /* 上腕二頭 */
+  --m-triceps: #B692F2;    /* 上腕三頭 */
+  --m-quads: #FF6B8A;      /* 大腿四頭 */
+  --m-hamstrings: #4FD1D9; /* ハムストリング */
+  --m-glutes: #E38AD1;     /* 臀部 */
+  --m-calves: #A0C948;     /* 下腿 */
+  --m-core: #9AA0B5;       /* 体幹 */
   --ring-track: rgba(255,255,255,.07);
   --bar-bg: rgba(10,10,12,.82);        /* タブバー（すりガラス）の下地 */
   --press: rgba(255,255,255,.03);      /* 行タップ時のハイライト */
@@ -43,6 +54,17 @@
     --accent: #E07800;      /* 白背景でも読めるよう一段深いオレンジ（コントラスト3:1確保） */
     --good: #248A3D;
     --bad: #D70015;
+    /* 白背景でも読めるよう一段深くした10色 */
+    --m-chest: #D9531E;
+    --m-back: #1F6FB2;
+    --m-shoulders: #A8790A;
+    --m-biceps: #0E8A63;
+    --m-triceps: #6F4BC4;
+    --m-quads: #C7304F;
+    --m-hamstrings: #0E8C96;
+    --m-glutes: #A63A93;
+    --m-calves: #5E7C10;
+    --m-core: #5C6377;
     --ring-track: rgba(0,0,0,.08);
     --bar-bg: rgba(248,248,250,.85);
     --press: rgba(0,0,0,.04);
@@ -472,6 +494,87 @@ input[type="search"] { margin-bottom: 10px; }
 }
 .chart-tip b { color: var(--text); }
 .chart-empty { color: var(--mut); font-size: 13px; text-align: center; padding: 30px 0; }
+/* 内訳つきツールチップは折り返す（375pxでも画面からはみ出さない） */
+.chart-tip.wrap { white-space: normal; max-width: 210px; }
+
+/* ---------- 部位別ボリューム ---------- */
+/* .vol-scr の中だけ文字を一段大きくする（AIトレーナー画面の .coach-scr と同じ考え方） */
+.vol-scr .card-head { font-size: 15px; }
+.vol-scr .card-head b { font-size: 16px; }
+.vol-scr .stat-label { font-size: 13px; }
+.vol-scr .stat-val { font-size: 24px; }
+.vol-scr .stat-val span { font-size: 13px; }
+.vol-scr .seg-btn { font-size: 14.5px; }
+.vol-scr .seg-sm .seg-btn { font-size: 13.5px; }
+.vol-scr .hint { font-size: 13.5px; }
+.vol-scr .sec-title { font-size: 14px; }
+.vol-scr label { font-size: 14.5px; }
+.vol-scr .chart .ax { font-size: 11.5px; }
+.vol-scr .chart-tip { font-size: 13.5px; }
+.vol-scr .empty-card, .vol-scr .chart-empty { font-size: 14.5px; }
+
+.vol-range { margin-top: 8px; }
+.vol-balseg { margin-bottom: 14px; }
+
+/* 未マッピング警告 */
+.vol-warn { background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.vol-warn .card-head { color: var(--accent); }
+.vol-warn .hint { color: var(--sub); margin-bottom: 6px; }
+.vol-fix-row { width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 12px 2px; border-bottom: 1px solid var(--line);
+  color: var(--text); font: inherit; font-size: 15px; font-weight: 600; text-align: left; }
+.vol-fix-row:last-child { border-bottom: none; }
+
+/* 凡例 */
+.vol-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.vol-chip { display: inline-flex; align-items: center; gap: 5px;
+  background: var(--card2); border: 1px solid var(--line); border-radius: 100px;
+  padding: 6px 11px 6px 9px; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.vol-chip.off { opacity: .4; }
+.vol-chip i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+
+/* 週のバランス（横棒） */
+.vol-bal-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.vol-bal-name { width: 104px; font-size: 14.5px; font-weight: 700; flex-shrink: 0; white-space: nowrap; }
+.vol-bal-bar { display: block; flex: 1; height: 11px; border-radius: 100px; background: var(--card2); overflow: hidden; }
+.vol-bal-fill { display: block; height: 100%; border-radius: 100px; }
+.vol-bal-val { width: 78px; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.vol-bal-val b { font-weight: 800; }
+.vol-bal-val i { font-style: normal; font-size: 12px; margin-left: 3px; }
+.vol-ratio { display: flex; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.vol-ratio > div { flex: 1; text-align: center; }
+.vol-ratio .vr-l { font-size: 12.5px; color: var(--sub); font-weight: 700; }
+.vol-ratio .vr-v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.vol-badge { display: inline-block; font-size: 12px; font-weight: 700; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent); border-radius: 6px; padding: 2px 8px; }
+
+/* マッピング一覧 */
+/* 種目名を1行目、部位タグを2行目に置く（375pxで種目名が折り返さないように） */
+.vol-map-row { width: 100%; display: grid; grid-template-columns: 1fr 14px;
+  grid-template-areas: "name chev" "tags chev"; align-items: center; gap: 3px 8px;
+  padding: 11px 2px; border-bottom: 1px solid var(--line);
+  color: var(--text); font: inherit; text-align: left; }
+.vol-map-row:last-of-type { border-bottom: none; }
+.vol-map-name { grid-area: name; font-size: 14.5px; font-weight: 700; }
+.vol-map-name i { font-size: 12.5px; font-weight: 400; }
+.vol-map-tags { grid-area: tags; }
+.vol-map-row .chev { grid-area: chev; }
+.vol-tag { display: inline-block; font-size: 11.5px; font-weight: 700; border-radius: 5px;
+  padding: 2px 6px; margin: 2px 4px 0 0; color: #0d0d10; white-space: nowrap; }
+.vol-tag.sub { opacity: .55; }
+.vol-tag.none { background: var(--card2); color: var(--mut); }
+@media (prefers-color-scheme: light) { .vol-tag { color: #fff; } }
+
+/* マッピング編集シートの部位ボタン */
+.vol-picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 4px; }
+.vol-pick { border: 1.5px solid var(--line); background: var(--card2); color: var(--sub);
+  border-radius: 12px; padding: 10px 12px; font-size: 14.5px; font-weight: 700; }
+.vol-pick i { font-style: normal; font-size: 12px; margin-left: 5px; opacity: .85; }
+.vol-pick.main { background: var(--pick); border-color: var(--pick); color: #0d0d10; }
+.vol-pick.sub { border-color: var(--pick); color: var(--text);
+  background: color-mix(in srgb, var(--pick) 22%, transparent); }
+@media (prefers-color-scheme: light) { .vol-pick.main { color: #fff; } }
 
 /* ---------- 設定 ---------- */
 .manage-row {

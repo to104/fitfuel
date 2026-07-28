@@ -110,6 +110,129 @@ export function barChart(container, bars, opts = {}) {
   attachHover(container, pts, p => `${esc(p.label)}　<b>${fmt(p.v)}</b>${esc(opts.unit || '')}`);
 }
 
+// X軸ラベルを出す位置を決める（最後は必ず出し、直前と重なるものは省く）
+function labelIndexes(n, maxLabels = 6) {
+  const step = Math.max(1, Math.ceil(n / maxLabels));
+  const set = new Set([n - 1]);
+  for (let i = 0; i < n - 1; i += step) if (n - 1 - i >= step) set.add(i);
+  return set;
+}
+
+// ---- 積み上げ棒グラフ（部位別ボリューム用） ----
+// bars: [{label, segs:[{key, v, color}]}]
+// opts: {tip(seg, bar) → ツールチップのHTML}
+export function stackedBarChart(container, bars, opts = {}) {
+  const total = b => b.segs.reduce((a, s) => a + s.v, 0);
+  if (!bars.length || bars.every(b => !total(b))) {
+    container.innerHTML = '<div class="chart-empty">この期間の記録はありません</div>';
+    return;
+  }
+  const max = niceMax(Math.max(...bars.map(total)));
+  const sy = v => M.t + (H - M.t - M.b) * (1 - v / max);
+  const band = (W - M.l - M.r) / bars.length;
+  const bw = Math.max(3, Math.min(22, band - 3));
+
+  const rects = bars.map((b, i) => {
+    const x = M.l + band * i + (band - bw) / 2;
+    let acc = 0;
+    return b.segs.map(s => {
+      if (!s.v) return '';
+      const y = sy(acc + s.v), h = sy(acc) - y;
+      acc += s.v;
+      return `<rect data-b="${i}" data-k="${esc(s.key)}" x="${x.toFixed(1)}" y="${y.toFixed(1)}"
+        width="${bw.toFixed(1)}" height="${Math.max(0.8, h).toFixed(1)}" fill="${s.color}"/>`;
+    }).join('');
+  }).join('');
+
+  const li = labelIndexes(bars.length);
+  const labels = bars.map((b, i) => li.has(i)
+    ? `<text x="${M.l + band * i + band / 2}" y="${H - 6}" class="ax" text-anchor="middle">${esc(b.label)}</text>`
+    : '').join('');
+
+  container.innerHTML = `
+    <div class="chart">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        ${frame0(max)}${rects}${labels}
+      </svg>
+      <div class="chart-tip wrap" hidden></div>
+    </div>`;
+
+  // 棒のセグメントをタップ/ホバーすると内訳を出す
+  const svg = container.querySelector('svg');
+  const tip = container.querySelector('.chart-tip');
+  const show = (e) => {
+    const r = e.target.closest('rect');
+    if (!r) { tip.hidden = true; return; }
+    const bar = bars[+r.dataset.b];
+    const seg = bar.segs.find(s => s.key === r.dataset.k);
+    if (!seg) return;
+    tip.hidden = false;
+    tip.innerHTML = opts.tip ? opts.tip(seg, bar) : `${esc(bar.label)} <b>${fmt(seg.v, 1)}</b>`;
+    const rect = svg.getBoundingClientRect();
+    const px = (M.l + band * (+r.dataset.b) + band / 2) / W * rect.width;
+    tip.style.left = `${Math.max(4, Math.min(rect.width - tip.offsetWidth - 4, px - tip.offsetWidth / 2))}px`;
+  };
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') show(e); });
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; });
+}
+
+// ---- トレンド折れ線（部位別・0起点／参照帯・移動平均つき） ----
+// points: [{label, v}]
+// opts: {color, unit, band:{min,max,label}, ma:[数値配列], tip(i) }
+export function trendChart(container, points, opts = {}) {
+  if (!points.length) {
+    container.innerHTML = '<div class="chart-empty">この期間の記録はありません</div>';
+    return;
+  }
+  const color = opts.color || 'var(--chart-1)';
+  const band = opts.band;
+  const max = niceMax(Math.max(1, ...points.map(p => p.v), band ? band.max * 1.15 : 0));
+  const sy = v => M.t + (H - M.t - M.b) * (1 - v / max);
+  const sx = i => M.l + (W - M.l - M.r) * (i / Math.max(1, points.length - 1));
+  const path = arr => arr.map((v, i) => `${i ? 'L' : 'M'}${sx(i).toFixed(1)},${sy(v).toFixed(1)}`).join('');
+
+  const li = labelIndexes(points.length);
+  const labels = points.map((p, i) => li.has(i)
+    ? `<text x="${sx(i)}" y="${H - 6}" class="ax" text-anchor="middle">${esc(p.label)}</text>`
+    : '').join('');
+
+  container.innerHTML = `
+    <div class="chart">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+        ${frame0(max)}
+        ${band ? `<rect x="${M.l}" y="${sy(band.max)}" width="${W - M.l - M.r}"
+            height="${(sy(band.min) - sy(band.max)).toFixed(1)}" fill="${color}" opacity=".13"/>
+          <text x="${W - M.r - 2}" y="${(sy(band.max) - 3).toFixed(1)}" class="ax" text-anchor="end">${esc(band.label || '')}</text>` : ''}
+        ${opts.ma ? `<path d="${path(opts.ma)}" fill="none" stroke="var(--sub)" stroke-width="1.6" stroke-dasharray="5 4"/>` : ''}
+        <path d="${path(points.map(p => p.v))}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${points.map((p, i) => `<circle cx="${sx(i).toFixed(1)}" cy="${sy(p.v).toFixed(1)}" r="3.2" fill="${color}" stroke="var(--card)" stroke-width="1.6"/>`).join('')}
+        ${labels}
+      </svg>
+      <div class="chart-tip wrap" hidden></div>
+    </div>`;
+
+  const pts = points.map((p, i) => ({ ...p, i, x: sx(i) }));
+  attachHover(container, pts,
+    p => opts.tip ? opts.tip(p.i) : `${esc(p.label)}　<b>${fmt(p.v, 1)}</b>${esc(opts.unit || '')}`);
+}
+
+// 0起点グラフの枠（0・中間・最大の3本）
+function frame0(max) {
+  const sy = yScale(0, max);
+  return [0, max / 2, max].map(v =>
+    `<line x1="${M.l}" y1="${sy(v)}" x2="${W - M.r}" y2="${sy(v)}" class="grid"/>
+     <text x="${M.l - 6}" y="${sy(v) + 3}" class="ax" text-anchor="end">${fmt(v, v < 10 && v % 1 ? 1 : 0)}</text>`
+  ).join('');
+}
+
+// 目盛りがキリのよい数になるように最大値を切り上げる
+// 中間の目盛り（最大値の半分）も半端にならないよう、刻みの2倍単位で切り上げる
+function niceMax(v) {
+  const step = v > 2000 ? 500 : v > 200 ? 50 : v > 60 ? 10 : v > 20 ? 5 : 2;
+  return Math.max(step * 2, Math.ceil(v / (step * 2)) * step * 2);
+}
+
 // タップ/マウス移動で最寄りのデータ点のツールチップを出す
 function attachHover(container, pts, html) {
   const svg = container.querySelector('svg');

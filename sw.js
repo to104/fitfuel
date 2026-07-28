@@ -2,7 +2,7 @@
 // sw.js — Service Worker（オフライン対応）
 // ※アプリ更新時は下のCACHE名と js/app.js の APP_VER を両方上げること
 // ============================================================
-const CACHE = 'fitfuel-v1.33.0';
+const CACHE = 'fitfuel-v1.34.0';
 
 const ASSETS = [
   './',
@@ -18,7 +18,9 @@ const ASSETS = [
   './js/charts.js',
   './js/timer.js',
   './js/coach.js',
+  './js/muscles.js',
   './js/ai.js',
+  './js/views/volume.js',
   './js/views/coach.js',
   './js/views/chat.js',
   './js/views/onboarding.js',

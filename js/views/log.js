@@ -7,13 +7,14 @@ import { lineChart, barChart } from '../charts.js';
 import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, weekdayOf } from '../ui.js';
 import { state, refresh, setTab } from '../app.js';
 import { sumMeals } from './meals.js';
+import * as volume from './volume.js';
 
 export async function render(root) {
   const sub = state.logTab || 'weight';
   root.innerHTML = `
     <header class="page-head"><h1 class="home-title">記録</h1></header>
     <div class="tabs page-tabs">
-      ${[['weight', '体重'], ['train', 'トレ'], ['cal', 'カレンダー'], ['report', 'レポート']].map(([k, l]) =>
+      ${[['weight', '体重'], ['train', 'トレ'], ['vol', '部位別'], ['cal', 'カレンダー'], ['report', 'レポート']].map(([k, l]) =>
         `<button class="tab${sub === k ? ' on' : ''}" data-sub="${k}">${l}</button>`).join('')}
     </div>
     <div id="log-pane"></div>`;
@@ -26,6 +27,7 @@ export async function render(root) {
   const pane = root.querySelector('#log-pane');
   if (sub === 'weight') await renderWeight(pane);
   else if (sub === 'train') await renderTrain(pane);
+  else if (sub === 'vol') await volume.render(pane);
   else if (sub === 'cal') await renderCalendar(pane);
   else await renderReport(pane);
 }
