@@ -216,6 +216,25 @@ function ymd(d) {
 // }
 // ============================================================
 export function aggregateVolume(workouts, opts = {}) {
+  const r = aggregateBy(workouts, w => mondayOf(w.date), opts);
+  return {
+    weeks: r.buckets.map(b => ({ week: b.key, byMuscle: b.byMuscle })),
+    unmapped: r.unmapped,
+  };
+}
+
+// 日ごとの集計（週ではなく1日単位）。集計ルールは週次とまったく同じ。
+// 戻り値: { days: [{ date:'YYYY-MM-DD', byMuscle:{...} }], unmapped: [...] }
+export function aggregateByDate(workouts, opts = {}) {
+  const r = aggregateBy(workouts, w => w.date, opts);
+  return {
+    days: r.buckets.map(b => ({ date: b.key, byMuscle: b.byMuscle })),
+    unmapped: r.unmapped,
+  };
+}
+
+// 集計の本体。keyOf で「週ごと」「日ごと」を切り替える（内部用）
+function aggregateBy(workouts, keyOf, opts = {}) {
   const {
     map = {}, bw = {}, weights = [], fallbackWeight = 0, warmupRatio = WARMUP_RATIO,
   } = opts;
@@ -242,7 +261,7 @@ export function aggregateVolume(workouts, opts = {}) {
     dayMax.set(key, Math.max(dayMax.get(key) || 0, top));
   }
 
-  const weeks = new Map();
+  const buckets = new Map();
   const unmapped = new Map();   // 種目名 → 記録件数
 
   for (const w of workouts) {
@@ -260,9 +279,9 @@ export function aggregateVolume(workouts, opts = {}) {
     if (!work.length) continue;
 
     const tonnage = work.reduce((a, s) => a + effWeight(s, f, kg) * (s.reps || 0), 0);
-    const wk = mondayOf(w.date);
-    if (!weeks.has(wk)) weeks.set(wk, { week: wk, byMuscle: {} });
-    const byMuscle = weeks.get(wk).byMuscle;
+    const key = keyOf(w);
+    if (!buckets.has(key)) buckets.set(key, { key, byMuscle: {} });
+    const byMuscle = buckets.get(key).byMuscle;
 
     for (const [id, coef] of Object.entries(m)) {
       if (!MUSCLE_BY_ID[id] || !coef) continue;
@@ -274,7 +293,7 @@ export function aggregateVolume(workouts, opts = {}) {
   }
 
   return {
-    weeks: [...weeks.values()].sort((a, b) => a.week.localeCompare(b.week)),
+    buckets: [...buckets.values()].sort((a, b) => a.key.localeCompare(b.key)),
     unmapped: [...unmapped.keys()],
   };
 }

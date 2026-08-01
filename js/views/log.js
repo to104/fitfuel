@@ -8,6 +8,7 @@ import { esc, fmt, openSheet, closeSheet, toast, todayStr, addDays, weekdayOf } 
 import { state, refresh, setTab } from '../app.js';
 import { sumMeals } from './meals.js';
 import * as volume from './volume.js';
+import * as M from '../muscles.js';
 
 export async function render(root) {
   const sub = state.logTab || 'weight';
@@ -32,22 +33,35 @@ export async function render(root) {
   else await renderReport(pane);
 }
 
-// ============ トレ（種目別の推移・集計） ============
+// ============ トレ（種目別・部位別の推移と集計） ============
 async function renderTrain(pane) {
-  const workouts = (await db.all('workouts'))
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
+  const [rows, custMap, custBw, weights, profile] = await Promise.all([
+    db.all('workouts'),
+    db.getSetting('volMap', {}),   // 種目→部位の上書き設定（部位別タブと共通）
+    db.getSetting('volBw', {}),    // 自重係数の上書き設定
+    db.all('weights'),
+    db.getSetting('profile', {}),
+  ]);
+  const workouts = rows.sort((a, b) => a.date.localeCompare(b.date) || (a.ts || 0) - (b.ts || 0));
   if (!workouts.length) {
     pane.innerHTML = '<div class="card empty-card">トレーニング記録がまだありません。<br>トレ画面から記録するか、設定→データで筋トレ記録アプリから移行できます。</div>';
     return;
   }
 
-  // 種目リスト（最後にやった日が新しい順）
+  // ---- 部位で絞り込む（その部位を主働筋または協働筋にふくむ種目だけ） ----
+  const part = M.MUSCLE_BY_ID[state.trainPart] ? state.trainPart : '';
+  const partName = part ? M.MUSCLE_BY_ID[part].name : '';
+  const partList = part
+    ? workouts.filter(w => { const m = M.mapFor(w.name, custMap); return !!(m && m[part]); })
+    : workouts;
+
+  // 種目リスト（絞り込んだ中で、最後にやった日が新しい順）
   const lastDate = new Map();
-  workouts.forEach(w => lastDate.set(w.name, w.date));
+  partList.forEach(w => lastDate.set(w.name, w.date));
   const names = [...lastDate.keys()].sort((a, b) => lastDate.get(b).localeCompare(lastDate.get(a)));
   const sel = names.includes(state.trainEx) ? state.trainEx : '';
 
-  const list = sel ? workouts.filter(w => w.name === sel) : workouts;
+  const list = sel ? partList.filter(w => w.name === sel) : partList;
   const allSets = list.flatMap(w => w.sets);
   const maxW = Math.max(0, ...allSets.map(s => s.weight || 0));
   const best = Math.max(0, ...allSets.map(s => e1rm(s.weight, s.reps)));
@@ -55,55 +69,111 @@ async function renderTrain(pane) {
   const volMonth = list.filter(w => w.date.startsWith(month))
     .reduce((a, w) => a + w.sets.reduce((x, s) => x + (s.weight || 0) * (s.reps || 0), 0), 0);
 
+  // ---- 日ごとの部位別ボリューム（集計ルールは「部位別」タブとまったく同じ） ----
+  const agg = M.aggregateByDate(list, {
+    map: custMap, bw: custBw, weights, fallbackWeight: profile.weight || 0,
+  });
+  const volOf = new Map(agg.days.map(d => [d.date, d.byMuscle]));
+  // 部位を選んでいるときは、その部位の今月ぶんのトン数を出す
+  const partMonth = part
+    ? agg.days.filter(d => d.date.startsWith(month))
+        .reduce((a, d) => a + (d.byMuscle[part]?.tonnage || 0), 0)
+    : 0;
+
   // 直近の記録（日ごとにまとめて新しい順に10日分）
   const byDate = {};
   list.forEach(w => (byDate[w.date] ??= []).push(w));
   const recent = Object.keys(byDate).sort().reverse().slice(0, 10);
 
+  // 1日ぶんの見出し右側（部位を選んでいればその部位の値、選んでいなければ日合計）
+  const dayVol = (d) => {
+    if (part) {
+      const c = volOf.get(d)?.[part];
+      return `${esc(partName)} ${fmt(Math.round(c?.tonnage || 0))} kg・${fmt(c?.sets || 0, 1)} set`;
+    }
+    const raw = byDate[d].reduce((a, w) =>
+      a + w.sets.reduce((x, s) => x + (s.weight || 0) * (s.reps || 0), 0), 0);
+    return `ボリューム ${fmt(Math.round(raw))} kg`;
+  };
+
+  // 1日ぶんの部位別内訳チップ（セット数の多い順）
+  // 部位を選んでいるときは、その部位は見出しに出ているのでチップからは省く
+  const dayParts = (d) => {
+    const bm = volOf.get(d) || {};
+    const cells = M.MUSCLES.filter(m => bm[m.id] && m.id !== part).map(m => ({ m, ...bm[m.id] }))
+      .sort((a, b) => b.sets - a.sets);
+    if (!cells.length) return '';
+    return `<div class="tr-parts">${part ? '<span class="tr-part-lead">いっしょに効いた部位</span>' : ''}${cells.map(c => `
+      <span class="tr-part"><i style="background:${M.muscleColor(c.m.id)}"></i>${esc(c.m.name)} ${fmt(c.sets, 1)}set${c.tonnage ? `・${fmt(Math.round(c.tonnage))}kg` : ''}</span>`).join('')}</div>`;
+  };
+
   pane.innerHTML = `
     <div class="card">
-      <label>種目<select id="tr-ex">
-        <option value="">すべての種目</option>
-        ${names.map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('')}
-      </select></label>
+      <div class="form-row2">
+        <label>部位<select id="tr-part">
+          <option value="">すべての部位</option>
+          ${M.MUSCLES.map(m => `<option value="${m.id}"${m.id === part ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}
+        </select></label>
+        <label>種目<select id="tr-ex">
+          <option value="">すべての種目</option>
+          ${names.map(n => `<option${n === sel ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+        </select></label>
+      </div>
+      ${part ? `<div class="hint">「${esc(partName)}」を主働筋または協働筋にふくむ種目だけを表示しています。</div>` : ''}
     </div>
     <div class="stat-grid">
       <div class="card stat"><div class="stat-label">トレ日数</div><div class="stat-val">${new Set(list.map(w => w.date)).size}<span> 日</span></div></div>
       <div class="card stat"><div class="stat-label">最大重量</div><div class="stat-val">${fmt(maxW, 1)}<span> kg</span></div></div>
-      <div class="card stat"><div class="stat-label">今月の総挙上量</div><div class="stat-val">${fmt(Math.round(volMonth))}<span> kg</span></div></div>
+      <div class="card stat"><div class="stat-label">今月の${part ? `${esc(partName)}ボリューム` : '総挙上量'}</div><div class="stat-val">${fmt(Math.round(part ? partMonth : volMonth))}<span> kg</span></div></div>
       <div class="card stat"><div class="stat-label">推定1RMベスト</div><div class="stat-val">${fmt(best, 1)}<span> kg</span></div></div>
     </div>
     <div class="card">
-      <div class="card-head"><span>${sel ? `${esc(sel)}：日別の最大重量` : '重量の推移'}</span></div>
-      <div id="tr-chart">${sel ? '' : '<div class="chart-empty">種目を選ぶと推移グラフを表示します</div>'}</div>
+      <div class="card-head"><span>${sel ? `${esc(sel)}：日別の最大重量`
+        : part ? `${esc(partName)}：日別ボリューム` : '重量の推移'}</span></div>
+      <div id="tr-chart">${sel || part ? '' : '<div class="chart-empty">部位または種目を選ぶとグラフを表示します</div>'}</div>
     </div>
     <div class="card">
-      <div class="card-head"><span>最近の記録</span></div>
+      <div class="card-head"><span>最近の記録</span><b class="mut">部位別の内訳つき</b></div>
       ${recent.map(d => `
         <div class="tr-day-head">
           <span>${+d.slice(5, 7)}/${+d.slice(8)}（${weekdayOf(d)}）</span>
-          <span class="tr-day-vol">ボリューム ${fmt(Math.round(byDate[d].reduce((a, w) => a + w.sets.reduce((x, s) => x + (s.weight || 0) * (s.reps || 0), 0), 0)))} kg</span>
+          <span class="tr-day-vol">${dayVol(d)}</span>
         </div>
+        ${dayParts(d)}
         ${byDate[d].map(w => `
           <div class="tr-row">
             <span class="tr-name">${esc(w.name)}${w.pr ? ' 🏆' : ''}</span>
             <span class="tr-sets">${w.sets.map(s => `${s.weight > 0 ? fmt(s.weight, 1) + 'kg' : '自重'}×${s.reps}`).join('　')}</span>
-          </div>`).join('')}`).join('')}
+          </div>`).join('')}`).join('') || '<div class="empty-line">この条件の記録はありません</div>'}
+      ${recent.length ? `<div class="hint">部位別の内訳は「部位別」タブと同じ集計です（ウォームアップ＝その日・その種目の最大の70%未満は除外、自重ぶんは体重から算入）。
+        協働筋はセット数だけ0.5で数え、kgは主働筋にまとめて計上するため、日合計とは一致しません。</div>` : ''}
+      ${agg.unmapped.length ? `<div class="hint">部位が未設定のため内訳に入っていない種目: ${esc(agg.unmapped.join('・'))}（「部位別」タブで設定できます）</div>` : ''}
     </div>`;
 
-  // グラフ: 日別の最大重量（直近20回分）
+  const chart = pane.querySelector('#tr-chart');
   if (sel) {
+    // グラフ: 日別の最大重量（直近20回分）
     const byDay = {};
     list.forEach(w => w.sets.forEach(s => { byDay[w.date] = Math.max(byDay[w.date] || 0, s.weight || 0); }));
     const pts = Object.entries(byDay).sort().slice(-20).map(([d, v]) => ({ d, v }));
     if (pts.length >= 2) {
-      lineChart(pane.querySelector('#tr-chart'), pts,
-        { color: 'var(--p)', unit: 'kg', dates: [pts[0].d, pts[pts.length - 1].d] });
+      lineChart(chart, pts, { color: 'var(--p)', unit: 'kg', dates: [pts[0].d, pts[pts.length - 1].d] });
     } else {
-      pane.querySelector('#tr-chart').innerHTML = '<div class="chart-empty">グラフは2日分以上の記録で表示されます</div>';
+      chart.innerHTML = '<div class="chart-empty">グラフは2日分以上の記録で表示されます</div>';
     }
+  } else if (part) {
+    // グラフ: 選んだ部位の日別ボリューム（記録のある直近14日ぶん）
+    const bars = agg.days.slice(-14).map(d => ({
+      label: `${+d.date.slice(5, 7)}/${+d.date.slice(8)}`,
+      v: Math.round(d.byMuscle[part]?.tonnage || 0),
+    }));
+    barChart(chart, bars, { color: M.muscleColor(part), unit: ' kg' });
   }
 
+  pane.querySelector('#tr-part').onchange = (e) => {
+    state.trainPart = e.target.value;
+    refresh();
+  };
   pane.querySelector('#tr-ex').onchange = (e) => {
     state.trainEx = e.target.value;
     refresh();

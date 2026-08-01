@@ -729,6 +729,15 @@ input[type="search"] { margin-bottom: 10px; }
 .tr-row:last-child { border-bottom: none; }
 .tr-name { font-weight: 600; flex: none; }
 .tr-sets { color: var(--sub); font-size: 14.5px; text-align: right; font-variant-numeric: tabular-nums; }
+/* その日の部位別内訳チップ */
+.tr-parts { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 7px; }
+.tr-part {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--card2); border-radius: 100px; padding: 4px 10px 4px 8px;
+  font-size: 13px; font-weight: 700; color: var(--sub); font-variant-numeric: tabular-nums;
+}
+.tr-part i { width: 8px; height: 8px; border-radius: 2px; display: block; flex: none; }
+.tr-part-lead { align-self: center; font-size: 12.5px; font-weight: 700; color: var(--mut); }
 
 /* ============================================================
    AIトレーナー（coach）
