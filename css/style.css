@@ -365,6 +365,8 @@ input[type="search"] { margin-bottom: 10px; }
 .food-row:active { background: var(--press); }
 .food-name { font-weight: 600; font-size: 16px; }
 .food-name-big { font-weight: 800; font-size: 20px; }
+/* 修正シートの品名入力（見出しの大きさのまま、枠で編集できることを示す） */
+.food-name-edit { font-weight: 800; font-size: 20px; margin-top: 0; padding: 9px 12px; }
 .food-sub { font-size: 13.5px; color: var(--mut); }
 .chev { color: var(--accent); font-size: 18px; font-weight: 700; }
 

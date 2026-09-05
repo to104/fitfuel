@@ -531,7 +531,8 @@ function openEditSheet(row, onSaved) {
 
   const body = openSheet('記録の修正', `
     <div class="amount-head">
-      <div class="food-name-big">${esc(row.name)}</div>
+      <input id="e-name" class="food-name-edit" type="text" value="${esc(row.name)}"
+             aria-label="品名" placeholder="品名" enterkeyhint="done">
       <div class="food-sub" id="e-sub"></div>
     </div>
     ${canScale ? `
@@ -565,6 +566,10 @@ function openEditSheet(row, onSaved) {
   const microInputs = [...body.querySelectorAll('[data-mi]')];
   const gEl = body.querySelector('#e-g');
   const pv = body.querySelector('#e-pv');
+  const nameEl = body.querySelector('#e-name');
+  // いま入力欄にある品名（前後の空白は落とす）。写真解析の誤認をその場で直せるようにするため、
+  // 保存・Myフード登録・削除確認はすべてこの値を見る
+  const curName = () => (nameEl.value || '').trim();
 
   // ビタミン・ミネラル入力欄に「この分量あたり」の値をセットする（0は空欄表示）
   function fillMicroInputs(s) {
@@ -607,6 +612,8 @@ function openEditSheet(row, onSaved) {
     const btn = body.querySelector('#e-myfood');
     const g = canScale ? Math.max(0, +gEl.value || 0) : (+row.amount || 0);
     if (!g) { toast('Myフード登録には分量gが必要です（100gあたりに換算するため）'); return; }
+    const nm = curName();
+    if (!nm) { toast('品名を入力してください'); nameEl.focus(); return; }
     let b100;
     if (canScale) {
       // base100がある記録: すでに100gあたりの値を持っているのでそのまま使う
@@ -628,18 +635,24 @@ function openEditSheet(row, onSaved) {
       };
     }
     // 同名のMyフードがあれば上書き確認（idを引き継いで更新）
-    const exist = (await db.all('customFoods')).find(x => x.name === row.name);
-    if (exist && !confirm(`Myフード「${row.name}」は登録済みです。今回の内容で上書きしますか？`)) return;
+    const exist = (await db.all('customFoods')).find(x => x.name === nm);
+    if (exist && !confirm(`Myフード「${nm}」は登録済みです。今回の内容で上書きしますか？`)) return;
     await db.put('customFoods', {
       ...(exist ? { id: exist.id, kana: exist.kana || '' } : { kana: '' }),
-      name: row.name, ...b100, u: ['1食', g],
+      name: nm, ...b100, u: ['1食', g],
     });
-    toast(`Myフード「${row.name}」を${exist ? '更新' : '登録'}しました`);
+    toast(`Myフード「${nm}」を${exist ? '更新' : '登録'}しました`);
     btn.textContent = '✓ Myフードに登録済み';
     btn.disabled = true;
   };
 
   body.querySelector('#e-save').onclick = async () => {
+    const nm = curName();
+    if (!nm) { toast('品名を入力してください'); nameEl.focus(); return; }
+    // ビタミン・ミネラルは、記録が自分の値を持たない場合だけ品名で内蔵食品DBを照合して集計している。
+    // そのため改名するとその照合が外れて値が0に落ちてしまう。
+    // 改名するときに限り、いま出ている値を記録自身へ焼き込んで、名前を変えても数値が変わらないようにする
+    const renamed = nm !== row.name;
     let upd;
     if (canScale) {
       const g = Math.max(0, +gEl.value || 0), s = g / 100, b = row.base100;
@@ -651,6 +664,10 @@ function openEditSheet(row, onSaved) {
         micros = mi.some(v => v > 0) ? mi.map(r2) : null;
         if (micros && s) newBase.v = micros.map(v => r2(v / s));
         else delete newBase.v;
+      } else if (renamed && !b.v && mv100) {
+        // 改名時: DB照合で出ていた100gあたりの値を記録へ焼き込む（照合が外れても値を保つ）
+        micros = mv100.map(x => r2((x || 0) * s));
+        newBase.v = mv100.map(r2);
       } else {
         // 未編集: 従来どおり base100.v があれば分量で按分（DB照合のみの食品はnullのまま）
         micros = b.v ? b.v.map(x => r2((x || 0) * s)) : null;
@@ -671,15 +688,20 @@ function openEditSheet(row, onSaved) {
       if (microDirty) {
         const mi = microInputs.map(el => +el.value || 0);
         upd.micros = mi.some(v => v > 0) ? mi.map(r2) : null;
+      } else if (renamed && !row.micros && dbV100 && +row.amount) {
+        // 改名時: base100を持たない記録もDB照合の値を焼き込んでおく（分量gで按分）
+        const mi = dbV100.map(x => r2((x || 0) * (+row.amount) / 100));
+        if (mi.some(v => v > 0)) upd.micros = mi;
       }
     }
+    upd.name = nm;
     await db.put('meals', upd);
-    toast('修正しました');
+    toast(nm === row.name ? '修正しました' : `「${nm}」に修正しました`);
     closeSheet();
     onSaved();
   };
   body.querySelector('#e-del').onclick = async () => {
-    if (!confirm(`「${row.name}」を削除しますか？`)) return;
+    if (!confirm(`「${curName() || row.name}」を削除しますか？`)) return;
     await db.del('meals', row.id);
     toast('削除しました');
     closeSheet();
